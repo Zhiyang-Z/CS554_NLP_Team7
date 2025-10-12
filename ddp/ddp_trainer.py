@@ -84,10 +84,10 @@ class Pre_Trainer:
                     avg_loss.zero_()
                     avg_grad_norm.zero_()
 
-                    if step % 70 == 0 and self.rank == 0:
+                    if step % 144 == 0 and self.rank == 0:
                         self.test()
 
-                    if step % 70 == 0 and self.rank == 0:
+                    if step % 144 == 0 and self.rank == 0:
                         torch.save({
                                     'model_state_dict': self.model.state_dict(),
                                     # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(),
