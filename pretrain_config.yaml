@@ -1,0 +1,31 @@
+dataset:
+  name: "HuggingFaceFW/fineweb"
+  subname: "sample-100BT"
+
+model:
+  # n_dim: 1536
+  # n_layer: 24
+  # n_head: 16
+  # ff_ratio: 4.0
+  # ff_dropout: 0.1
+  # ex_ratio: 1.2
+  n_dim: 2560
+  n_layer: 32
+  n_head: 32
+  ff_ratio: 4.0
+  ff_dropout: 0.1
+  ex_ratio: 1.2
+
+pretraining:
+  # pretrain_length: 1024
+  # batch_size_per_gpu: 24
+  # batch_size: 500000
+  # learning_rate: 2.5e-4
+  pretrain_length: 1024
+  batch_size_per_gpu: 6
+  batch_size: 1000000
+  learning_rate: 1.6e-4
+
+path:
+  save: gpt-training
+  load: /home/zzhang18/proj/CS554_NLP_Team7/saved_models/

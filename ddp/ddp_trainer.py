@@ -39,7 +39,7 @@ class Pre_Trainer:
         self.grad_accum_steps = grad_accum_steps
 
         if self.rank == 0:
-            wandb.init(project="CS554_NLP", entity="zhiyang_zhang-worcester-polytechnic-institute")
+            wandb.init(project="Final", entity="CS554_NLP")
 
     def train(self):
         step = -1
@@ -90,7 +90,7 @@ class Pre_Trainer:
                     if step % 70 == 0 and self.rank == 0:
                         torch.save({
                                     'model_state_dict': self.model.state_dict(),
-                                    'optimizer_state_dict': self.optimizer.state_dict(),
+                                    # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(),
                                     'epoch': epoch,
                                     'global_step': step
                                 }, f"/home/zzhang18/proj/CS554_NLP_Team7/saved_models/{step}.pt")

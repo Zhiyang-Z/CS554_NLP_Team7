@@ -41,15 +41,15 @@ def ddp_main(rank: int, world_size: int):
                 ff_dropout = config['model']['ff_dropout'],
                 device = f'cuda:{rank}',
                 ex_ratio = config['model']['ex_ratio'])
-    # load state for continue training
-    # if config['path']['load'] is not None:
-    #     model.load_state_dict(config['path']['load'])
 
     model.train()
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of parameters: {total_params}")
     # optimizer
     optimizer = ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr=config['pretraining']['learning_rate'])
+    # load state for continue training
+    # if config['path']['load'] is not None:
+    #     model.load_state_dict(config['path']['load'])
     # train
     grad_accum_steps = config['pretraining']['batch_size'] // (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length'])
     print(f'grad accum steps: {grad_accum_steps}')
