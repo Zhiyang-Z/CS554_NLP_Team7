@@ -78,6 +78,7 @@ class Decoder_Block(nn.Module):
         self,
         n_dim = 1280,
         n_head = 20,
+        dim_head = 64,
         ff_ratio = 4.0,
         ff_dropout = 0.1,
         train_length = 1024,
@@ -86,8 +87,8 @@ class Decoder_Block(nn.Module):
     ):
         super().__init__()
         self.norm1 = nn.LayerNorm(n_dim)
-        assert n_dim % n_head == 0, "n_dim % n_head != 0, please check."
-        self.att = Attention(n_dim, n_head, n_dim // n_head, int(train_length * ex_scale), device)
+        # assert n_dim % n_head == 0, "n_dim % n_head != 0, please check."
+        self.att = Attention(n_dim, n_head, dim_head, int(train_length * ex_scale), device)
         self.norm2 = nn.LayerNorm(n_dim)
         # Feed Forward
         ff_hidden_dim = int(n_dim * ff_ratio)
@@ -116,6 +117,7 @@ class GPT(nn.Module):
         n_dim = 1280,
         n_layer = 36,
         n_head = 20,
+        dim_head = 64,
         ff_ratio = 4.0,
         ff_dropout = 0.1,
         device = '',
@@ -123,19 +125,19 @@ class GPT(nn.Module):
     ):
         super().__init__()
         self.v_size, self.train_length = v_size, train_length
-        self.n_dim, self.n_layer, self.n_head = n_dim, n_layer, n_head
+        self.n_dim, self.n_layer, self.n_head, self.dim_head = n_dim, n_layer, n_head, dim_head
         self.ff_ratio, self.ff_dropout = ff_ratio, ff_dropout
         self.device = device
         self.ex_ratio = ex_ratio
         # define transformer layers
         self.embedding = nn.Embedding(self.v_size, self.n_dim)
         self.decoder_layers = nn.ModuleList(
-            [Decoder_Block(self.n_dim, self.n_head, self.ff_ratio, self.ff_dropout, self.train_length, self.ex_ratio, self.device) for _ in range(self.n_layer)])
+            [Decoder_Block(self.n_dim, self.n_head, self.dim_head, self.ff_ratio, self.ff_dropout, self.train_length, self.ex_ratio, self.device) for _ in range(self.n_layer)])
         # final output
         self.final_norm = nn.LayerNorm(self.n_dim)
         self.out = nn.Linear(self.n_dim, self.v_size)
         # cache the rotary embedding cos/sin parameters
-        rope_cos, rope_sin = precompute_cos_sin(int(train_length * ex_ratio), n_dim // n_head, device)
+        rope_cos, rope_sin = precompute_cos_sin(int(train_length * ex_ratio), self.dim_head, device)
         self.register_buffer('rope_cos', rope_cos)
         self.register_buffer('rope_sin', rope_sin)
         # initialize parameters

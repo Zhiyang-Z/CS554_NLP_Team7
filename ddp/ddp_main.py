@@ -37,6 +37,7 @@ def ddp_main(rank: int, world_size: int):
                 n_dim = config['model']['n_dim'],
                 n_layer = config['model']['n_layer'],
                 n_head = config['model']['n_head'],
+                dim_head = config['model']['dim_head'],
                 ff_ratio = config['model']['ff_ratio'],
                 ff_dropout = config['model']['ff_dropout'],
                 device = f'cuda:{rank}',
