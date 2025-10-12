@@ -1,16 +1,30 @@
 from torch.utils.data import IterableDataset, get_worker_info
 from collections import deque
 import numpy as np
+from datasets import load_dataset
+from datasets.distributed import split_dataset_by_node
+import os
 
 class PretrainDataset(IterableDataset):
-    def __init__(self, dataset, tokenizer, pretrain_len=1024):
+    def __init__(self, dataset_name, subname, tokenizer, pretrain_len=1024):
         # NOTICE: dataset is a streaming dataset, make sure to split it by node and worker
-        self.dataset = dataset
+        self.dataset_name, self.subname = dataset_name, subname
+        self.dataset = None
         self.tokenizer = tokenizer
         self.eot_id = tokenizer.eos_token_id
         self.pretrain_len = pretrain_len
         self.buffer = deque() # use deque for performance, No other thread in one worker, it's safe.
         self.it = None # iterator for dataset, None represents need to start over.
+
+        self.set_and_shuffle_dataset(42)
+
+    def set_and_shuffle_dataset(self, seed):
+        # dataset
+        dataset = load_dataset(self.dataset_name, name=self.subname, split="train", streaming=True)
+        dataset = dataset.shuffle(seed=seed) # shuffle it, just a routine, we will handle shuffle for each iteration in training loop.
+        # split by node
+        dataset = split_dataset_by_node(dataset, rank=int(os.environ['RANK']), world_size=int(os.environ['WORLD_SIZE']))
+        self.dataset = dataset
 
     def __iter__(self):
         cur_idx = -1 # current iteration id for split data for workers.

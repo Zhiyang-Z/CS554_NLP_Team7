@@ -2,32 +2,30 @@ import torch
 from ddp.ddp_utils import ddp_setup, ddp_cleanup
 from ddp.ddp_trainer import Pre_Trainer
 from torch.utils.data import DataLoader
-from datasets import load_dataset
-from datasets.distributed import split_dataset_by_node
 from transformers import AutoTokenizer
 from dataloaders.fineweb import PretrainDataset
 from model.gpt import GPT
 from torch.distributed.optim import ZeroRedundancyOptimizer
+import yaml
 
 def ddp_main(rank: int, world_size: int):
     print("ddp setup...")
     ddp_setup(rank, world_size)
     print("ddp setup done.")
+    # configure
+    with open("pretrain_config.yaml", "r") as f:
+        config = yaml.safe_load(f)
 
-    # dataset
-    dataset = load_dataset("HuggingFaceFW/fineweb", name="sample-10BT", split="train", streaming=True)
-    dataset = dataset.shuffle(seed=42) # shuffle it, just a routine, we will handle shuffle for each iteration in training loop.
-    # split by node
-    dataset = split_dataset_by_node(dataset, rank=rank, world_size=world_size)
     # tokenizer
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     print(f"The vocabulary size is {tokenizer.vocab_size}, special tokens: {tokenizer.all_special_tokens}")
-    dataset = PretrainDataset(dataset, tokenizer, pretrain_len=2048)
+    dataset = PretrainDataset(dataset_name=config['dataset']['name'], subname=config['dataset']['subname'],
+                              tokenizer=tokenizer, pretrain_len=config['pretraining']['pretrain_length'])
     dataloader = DataLoader(dataset,
-                            batch_size=2,
+                            batch_size=config['pretraining']['batch_size_per_gpu'],
                             pin_memory=True,
                             shuffle=False, # must be False when use DDP
-                            num_workers=4,
+                            num_workers=2,
                             drop_last=True,
                             prefetch_factor=2)
     # # test dataloader speed
@@ -35,30 +33,27 @@ def ddp_main(rank: int, world_size: int):
     #     pass
     # model defination
     model = GPT(v_size = tokenizer.vocab_size,
-                train_length = 2048,
-                n_dim = 1280,
-                n_layer = 36,
-                n_head = 20,
-                ff_ratio = 4.0,
-                ff_dropout = 0.1,
-                device = None,
-                ex_ratio = 1.2)
-    # model = GPT(v_size = tokenizer.vocab_size,
-    #             train_length = 2048,
-    #             n_dim = 768,
-    #             n_layer = 1,
-    #             n_head = 6,
-    #             ff_ratio = 4.0,
-    #             ff_dropout = 0.1,
-    #             device = f'cuda:{rank}',
-    #             ex_ratio = 1.2)
+                train_length = config['pretraining']['pretrain_length'],
+                n_dim = config['model']['n_dim'],
+                n_layer = config['model']['n_layer'],
+                n_head = config['model']['n_head'],
+                ff_ratio = config['model']['ff_ratio'],
+                ff_dropout = config['model']['ff_dropout'],
+                device = f'cuda:{rank}',
+                ex_ratio = config['model']['ex_ratio'])
+    # load state for continue training
+    # if config['path']['load'] is not None:
+    #     model.load_state_dict(config['path']['load'])
+
     model.train()
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of parameters: {total_params}")
     # optimizer
-    optimizer = ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr=1e-4)
+    optimizer = ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr=config['pretraining']['learning_rate'])
     # train
-    pre_trainer = Pre_Trainer(dataloader, model, optimizer)
+    grad_accum_steps = config['pretraining']['batch_size'] // (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length'])
+    print(f'grad accum steps: {grad_accum_steps}')
+    pre_trainer = Pre_Trainer(dataloader, model, optimizer, grad_accum_steps)
     print('training start...')
     pre_trainer.train()
 

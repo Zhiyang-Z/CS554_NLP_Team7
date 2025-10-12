@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch
 import torch.distributed as dist
+from datetime import timedelta
 
 def ddp_setup(rank, world_size):
     """
@@ -16,7 +17,9 @@ def ddp_setup(rank, world_size):
     os.environ['RANK'] = str(rank)
     # initialize the process group
     torch.cuda.set_device(rank)
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    dist.init_process_group(backend="nccl",
+                            rank=rank,
+                            world_size=world_size,)
     # enable fp32
     torch.set_float32_matmul_precision("high")
     
