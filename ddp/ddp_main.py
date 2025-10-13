@@ -51,7 +51,8 @@ def ddp_main(rank: int, world_size: int):
     optimizer = ZeroRedundancyOptimizer(model.parameters(),
                                         optimizer_class=torch.optim.AdamW,
                                         lr=config['pretraining']['learning_rate'],
-                                        weight_decay=1e-1)
+                                        betas=(0.9, 0.95),
+                                        weight_decay=config['pretraining']['weight_decay'])
     # load state for continue training
     # if config['path']['load'] is not None:
     #     model.load_state_dict(config['path']['load'])
