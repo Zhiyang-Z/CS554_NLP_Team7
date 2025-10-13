@@ -48,28 +48,28 @@ class Pre_Trainer:
         for epoch in range(2000000000): # termination is decide by human.
             # Here, we shuffle dataset for each iteration
             self.train_data_loader.dataset.set_and_shuffle_dataset(46+epoch)
-            self.optimizer.zero_grad() # clear remainder when iterating dataset.
+            self.optimizer.zero_grad(set_to_none = True) # clear remainder when iterating dataset.
             avg_loss.zero_()
             avg_grad_norm.zero_()
             for i, data in tqdm(enumerate(self.train_data_loader)):
                 self.model.train()
                 data = data.to(self.device)
                 x, y = data[:,:-1].contiguous(), data[:,1:].contiguous() # input and label
-                with torch.autocast(device_type=self.device, dtype=torch.float16):
+                with torch.autocast(device_type='cuda', dtype=torch.float16):
                     logits = self.model(x)
                     voc_size = logits.shape[-1]
                     loss = self.loss_fn(logits.view(-1, voc_size), y.view(-1))
                     loss = loss / self.grad_accum_steps
                     avg_loss[0] += loss.item()
-                self.scaler.scale(loss).backward()
                 if (i + 1) % self.grad_accum_steps == 0:
+                    self.scaler.scale(loss).backward()
                     self.scaler.unscale_(self.optimizer)
                     grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     avg_grad_norm[0] = grad_norm.item()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     step += 1
-                    self.optimizer.zero_grad()
+                    self.optimizer.zero_grad(set_to_none = True)
                     # collect training info
                     try:
                         dist.all_reduce(avg_loss, op=dist.ReduceOp.AVG)
@@ -84,10 +84,10 @@ class Pre_Trainer:
                     avg_loss.zero_()
                     avg_grad_norm.zero_()
 
-                    if step % 144 == 0 and self.rank == 0:
+                    if step % 3600 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                         self.test()
 
-                    if step % 144 == 0 and self.rank == 0:
+                    if step % 3600 == 0 and self.rank == 0:
                         torch.save({
                                     'model_state_dict': self.model.state_dict(),
                                     # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(),
@@ -96,6 +96,9 @@ class Pre_Trainer:
                                 }, f"/home/zzhang18/proj/CS554_NLP_Team7/saved_models/{step}.pt")
 
                     if dist.is_initialized(): dist.barrier()
+                else:
+                    with self.model.no_sync():
+                        self.scaler.scale(loss).backward()
 
     @torch.no_grad
     def sample(self, ini_input):

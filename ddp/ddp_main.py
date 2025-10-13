@@ -7,6 +7,7 @@ from dataloaders.fineweb import PretrainDataset
 from model.gpt import GPT
 from torch.distributed.optim import ZeroRedundancyOptimizer
 import yaml
+import math
 
 def ddp_main(rank: int, world_size: int):
     print("ddp setup...")
@@ -20,12 +21,12 @@ def ddp_main(rank: int, world_size: int):
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     print(f"The vocabulary size is {tokenizer.vocab_size}, special tokens: {tokenizer.all_special_tokens}")
     dataset = PretrainDataset(dataset_name=config['dataset']['name'], subname=config['dataset']['subname'],
-                              tokenizer=tokenizer, pretrain_len=config['pretraining']['pretrain_length'])
+                              tokenizer=tokenizer, pretrain_len=config['pretraining']['pretrain_length']+1)
     dataloader = DataLoader(dataset,
                             batch_size=config['pretraining']['batch_size_per_gpu'],
                             pin_memory=True,
                             shuffle=False, # must be False when use DDP
-                            num_workers=2,
+                            num_workers=4,
                             drop_last=True,
                             prefetch_factor=2)
     # # test dataloader speed
@@ -47,12 +48,15 @@ def ddp_main(rank: int, world_size: int):
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of parameters: {total_params}")
     # optimizer
-    optimizer = ZeroRedundancyOptimizer(model.parameters(), optimizer_class=torch.optim.AdamW, lr=config['pretraining']['learning_rate'])
+    optimizer = ZeroRedundancyOptimizer(model.parameters(),
+                                        optimizer_class=torch.optim.AdamW,
+                                        lr=config['pretraining']['learning_rate'],
+                                        weight_decay=1e-1)
     # load state for continue training
     # if config['path']['load'] is not None:
     #     model.load_state_dict(config['path']['load'])
     # train
-    grad_accum_steps = config['pretraining']['batch_size'] // (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length'])
+    grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length']))
     print(f'grad accum steps: {grad_accum_steps}')
     pre_trainer = Pre_Trainer(dataloader, model, optimizer, grad_accum_steps)
     print('training start...')

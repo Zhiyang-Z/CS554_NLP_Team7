@@ -2,8 +2,10 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from einops import rearrange
+import numpy as np
 
 from model.rope import precompute_cos_sin, apply_rotary_pos_emb
+from model.poe import get_1d_sincos_pos_embed
 
 class Attention(nn.Module):
     def __init__(
@@ -34,15 +36,16 @@ class Attention(nn.Module):
         v = rearrange(v, "B L (h d) -> B h L d", h=self.n_head)
         # rotary embedding and cache (if reference)
         if self.training:
-            with torch.autocast(device_type=self.device, enabled=False):
+            with torch.autocast(device_type='cuda', enabled=False):
                 q, k = apply_rotary_pos_emb(q,
                                             k,
                                             rope_cos[0:L, :],
                                             rope_sin[0:L, :])
+            # q, k = q, k # poe
         else:
             assert self.cur_cached_len < self.max_cache_len, "Cache length exceeds maximum limit."
             assert self.cur_cached_len >= 0
-            with torch.autocast(device_type=self.device, enabled=False):
+            with torch.autocast(device_type='cuda', enabled=False):
                 q, k = apply_rotary_pos_emb(q,
                                             k,
                                             rope_cos[self.cur_cached_len : (self.cur_cached_len + L), :],
@@ -59,7 +62,7 @@ class Attention(nn.Module):
             q, k, v = q, self.cached_k[:, :, :self.cur_cached_len, :], self.cached_v[:, :, :self.cur_cached_len, :]
 
         # print(q.device, k.device, v.device)
-        x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal = True if self.training else False)
+        x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=True)
 
         x = rearrange(x, "B h L d -> B L (h d)")
         x = x.to(q.dtype)
@@ -103,7 +106,7 @@ class Decoder_Block(nn.Module):
         y = self.norm1(x)
         x = x + self.att(y, rope_param)
         y = self.norm2(x)
-        x = x + self.dropout2(self.ff2(self.dropout1(F.relu(self.ff1(y)))))
+        x = x + self.dropout2(self.ff2(self.dropout1(F.gelu(self.ff1(y)))))
         return x
     
     def clear_kv_cache(self):
@@ -140,6 +143,9 @@ class GPT(nn.Module):
         rope_cos, rope_sin = precompute_cos_sin(int(train_length * ex_ratio), self.dim_head, device)
         self.register_buffer('rope_cos', rope_cos)
         self.register_buffer('rope_sin', rope_sin)
+        # # absoute positional embedding
+        # pos_embed = get_1d_sincos_pos_embed(self.n_dim, np.arange(self.train_length, dtype=np.float32))
+        # self.register_buffer('pos_embed', torch.from_numpy(pos_embed).float().unsqueeze(0))
         # initialize parameters
         self._ini_para()
 
@@ -160,6 +166,7 @@ class GPT(nn.Module):
     def forward(self, x):
         # x shape: [Batch, Length]
         x = self.embedding(x)
+        # x += self.pos_embed[:, :x.shape[1], :].to(x.dtype)
         for layer in self.decoder_layers:
             x = layer(x, (self.rope_cos, self.rope_sin))
         x = self.final_norm(x)

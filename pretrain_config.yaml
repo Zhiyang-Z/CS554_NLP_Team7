@@ -3,6 +3,14 @@ dataset:
   subname: "sample-10BT"
 
 model:
+  # 0.125B
+  n_dim: 768
+  n_layer: 12
+  n_head: 12
+  dim_head: 64
+  ff_ratio: 4.0
+  ff_dropout: 0.0 # 0.0 for pretraining
+  ex_ratio: 1.2
   # 0.7B
   # n_dim: 1536
   # n_layer: 24
@@ -20,15 +28,20 @@ model:
   # ff_dropout: 0.1
   # ex_ratio: 1.2
   # 1.3B
-  n_dim: 2048
-  n_layer: 24
-  n_head: 24
-  dim_head: 128
-  ff_ratio: 4.0
-  ff_dropout: 0.1
-  ex_ratio: 1.2
+  # n_dim: 2048
+  # n_layer: 24
+  # n_head: 24
+  # dim_head: 128
+  # ff_ratio: 4.0
+  # ff_dropout: 0.1
+  # ex_ratio: 1.2
 
 pretraining:
+  # 0.125B
+  pretrain_length: 1024
+  batch_size_per_gpu: 32
+  batch_size: 500000
+  learning_rate: 6.0e-4
   # 0.7B
   # pretrain_length: 1024
   # batch_size_per_gpu: 24
@@ -40,10 +53,10 @@ pretraining:
   # batch_size: 1000000
   # learning_rate: 1.6e-4
   # 1.3B
-  pretrain_length: 1024
-  batch_size_per_gpu: 14
-  batch_size: 1000000
-  learning_rate: 2.0e-4
+  # pretrain_length: 1024
+  # batch_size_per_gpu: 4 # 14 for A100, 4 for L40S
+  # batch_size: 1000000
+  # learning_rate: 2.0e-4
 
 path:
   save: gpt-training
