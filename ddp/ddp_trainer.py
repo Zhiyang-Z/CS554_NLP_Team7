@@ -84,7 +84,7 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    if step % 5 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    if step % 144 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                         self.test(step)
                         torch.save({
                                     'model_state_dict': self.model.module.state_dict(),
