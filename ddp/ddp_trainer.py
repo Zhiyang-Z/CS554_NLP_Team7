@@ -46,7 +46,7 @@ class Pre_Trainer:
             wandb.init(project="Final", entity="CS554_NLP")
 
     def train(self):
-        step = -1
+        step = 0
         avg_loss = torch.zeros((1,), device=self.device)
         avg_grad_norm = torch.zeros((1,), device=self.device)
         for epoch in range(2000000000): # termination is decide by human.
@@ -84,7 +84,7 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    if step % 144 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    if step % 3600 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                         self.test(step)
                         torch.save({
                                     'model_state_dict': self.model.module.state_dict(),
@@ -128,9 +128,10 @@ class Pre_Trainer:
         
     @torch.no_grad
     def test(self, step):
-        table = wandb.Table(columns=["text"])
+        # wandb 0.19.10 works fine.
+        sample_text = ""
         for i in range(8):
             sample = self.sample()
-            table.add_data(sample)
-        wandb.log({f"text_samples_{step}": table}, step=step, commit = False)
+            sample_text += f"=== Sample {i+1} ===<br>{sample}<br><br>"
+        wandb.log({f"sample_text": wandb.Html(sample_text)}, step=step, commit = False)
         # print(sample_text)
