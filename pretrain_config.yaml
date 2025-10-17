@@ -63,8 +63,8 @@ pretraining:
   # weight_decay: 0.1
 
   # lr_scheduler
-  warmup_iters: 700
-  lr_decay_iters: 7000
+  warmup_iters: 750
+  lr_decay_iters: 5000
   min_learning_rate: 2.0e-4
 
 path:
