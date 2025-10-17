@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from einops import rearrange
 import numpy as np
+import math
 
 from model.rope import precompute_cos_sin, apply_rotary_pos_emb
 from model.poe import get_1d_sincos_pos_embed
@@ -41,7 +42,7 @@ class Attention(nn.Module):
                                             k,
                                             rope_cos[0:L, :],
                                             rope_sin[0:L, :])
-            # q, k = q, k # poe
+            x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=True)
         else:
             assert self.cur_cached_len < self.max_cache_len, "Cache length exceeds maximum limit."
             assert self.cur_cached_len >= 0
@@ -59,10 +60,8 @@ class Attention(nn.Module):
             self.cached_v[:, :, self.cur_cached_len : (self.cur_cached_len + L), :] = v
             self.cur_cached_len += L
             # current Q, K, V
-            q, k, v = q, self.cached_k[:, :, :self.cur_cached_len, :], self.cached_v[:, :, :self.cur_cached_len, :]
-
-        # print(q.device, k.device, v.device)
-        x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=True)
+            q, k, v = q, self.cached_k[:, :, 0:self.cur_cached_len, :], self.cached_v[:, :, 0:self.cur_cached_len, :]
+            x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=False)
 
         x = rearrange(x, "B h L d -> B L (h d)")
         x = x.to(q.dtype)
@@ -139,6 +138,8 @@ class GPT(nn.Module):
         # final output
         self.final_norm = nn.LayerNorm(self.n_dim)
         self.out = nn.Linear(self.n_dim, self.v_size)
+        # weight tying
+        self.embedding.weight = self.out.weight
         # cache the rotary embedding cos/sin parameters
         rope_cos, rope_sin = precompute_cos_sin(int(train_length * ex_ratio), self.dim_head, device)
         self.register_buffer('rope_cos', rope_cos)
@@ -148,6 +149,10 @@ class GPT(nn.Module):
         # self.register_buffer('pos_embed', torch.from_numpy(pos_embed).float().unsqueeze(0))
         # initialize parameters
         self._ini_para()
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith('to_out.weight') or pn.endswith('ff2.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * self.n_layer))
 
     def _ini_para(self):
         print('transformer initializing...')
@@ -155,11 +160,11 @@ class GPT(nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, mean=0, std=0.02)
                 if m.bias is not None: nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.LayerNorm):
-                nn.init.normal_(m.weight, mean=0, std=0.02)
-                if m.bias is not None: nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Embedding):
                 nn.init.normal_(m.weight, mean=0, std=0.02)
+            elif isinstance(m, torch.nn.LayerNorm):
+                torch.nn.init.ones_(m.weight)
+                torch.nn.init.zeros_(m.bias)
             else:
                 pass
 

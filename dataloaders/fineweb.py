@@ -41,13 +41,14 @@ class PretrainDataset(IterableDataset):
                 try:
                     while len(self.buffer) < self.pretrain_len:
                         item = next(self.it)
-                        cur_idx += 1
-                        assert cur_idx >= 0
-                        if cur_idx % num_workers != worker_id:
-                            continue # skip data not assigned to this worker
+                        # For IterableDataset, it's useless to launch multiple workers???
+                        # cur_idx += 1
+                        # assert cur_idx >= 0
+                        # if cur_idx % num_workers != worker_id:
+                        #     continue # skip data not assigned to this worker
                         tokens = self.tokenizer(item['text'], truncation=False, max_length=None)['input_ids']
-                        assert tokens[-1] != self.eot_id
-                        tokens.append(self.eot_id)
+                        assert tokens[0] != self.eot_id
+                        tokens.insert(0, self.eot_id) # add eot at the beginning
                         self.buffer.extend(tokens)
                 except StopIteration:
                     assert len(self.buffer) < self.pretrain_len

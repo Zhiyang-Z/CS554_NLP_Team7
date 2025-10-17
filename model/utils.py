@@ -17,16 +17,3 @@ def gen_padding_mask_for_self_attention(padding_mask: torch.tensor) -> torch.ten
                              [True,  True,  True,  True, True]
     """
     return padding_mask # shape: [batch_size, length, length]
-    
-
-# test
-if __name__ == '__main__':
-    print(gen_attn_mask(7))
-    padding_mask = gen_padding_mask(torch.tensor([[1,2,3,0], [4,5,0,0]]), 0)
-    padding_mask_for_self_att = gen_padding_mask_for_self_attention(padding_mask)
-    print(padding_mask_for_self_att)
-    import matplotlib.pyplot as plt
-    pos_encoding = gen_pos_encoding(100, 768)
-    cax = plt.matshow(pos_encoding)
-    plt.gcf().colorbar(cax)
-    plt.show()

@@ -3,8 +3,8 @@ from torch.utils.data import DataLoader
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.nn import functional as F
 import os
+import math
 
 import wandb
 from tqdm import tqdm
@@ -15,7 +15,9 @@ class Pre_Trainer:
         train_data_loader: DataLoader,
         model: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
+        scheduler,
         grad_accum_steps: int,
+        save_path: str
     ) -> None:
         self.world_size = int(os.environ['WORLD_SIZE'])
         self.rank = int(os.environ['RANK'])
@@ -30,13 +32,15 @@ class Pre_Trainer:
         self.model.train()
 
         self.train_data_loader = train_data_loader
-        self.optimizer = optimizer
+        self.optimizer, self.scheduler = optimizer, scheduler
         self.loss_fn = torch.nn.CrossEntropyLoss(weight=None, reduction='mean')
 
         # Creates a GradScaler for mixed precision training.
         self.scaler = torch.GradScaler()
 
         self.grad_accum_steps = grad_accum_steps
+
+        self.save_path = save_path
 
         if self.rank == 0:
             wandb.init(project="Final", entity="CS554_NLP")
@@ -62,12 +66,14 @@ class Pre_Trainer:
                     loss = loss / self.grad_accum_steps
                     avg_loss[0] += loss.item()
                 if (i + 1) % self.grad_accum_steps == 0:
+                    # backprop the accumulated gradients    
                     self.scaler.scale(loss).backward()
                     self.scaler.unscale_(self.optimizer)
                     grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     avg_grad_norm[0] = grad_norm.item()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
+                    self.scheduler.step()
                     step += 1
                     self.optimizer.zero_grad(set_to_none = True)
                     # collect training info
@@ -77,23 +83,25 @@ class Pre_Trainer:
                     except Exception as e:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
-                    if self.rank == 0:
-                        wandb.log({"epoch": epoch}, commit = False)
-                        wandb.log({"grad_norm": avg_grad_norm.item()}, commit = False)
-                        wandb.log({"loss": avg_loss[0].item()}, commit=True)
-                    avg_loss.zero_()
-                    avg_grad_norm.zero_()
 
-                    if step % 3600 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
-                        self.test()
-
-                    if step % 3600 == 0 and self.rank == 0:
+                    if step % 5 == 0 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                        self.test(step)
                         torch.save({
-                                    'model_state_dict': self.model.state_dict(),
-                                    # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(),
+                                    'model_state_dict': self.model.module.state_dict(),
+                                    # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(), # Anything wrong? very slow to sychronize between GPUs
+                                    'scheduler_state_dict': self.scheduler.state_dict(),
                                     'epoch': epoch,
                                     'global_step': step
-                                }, f"/home/zzhang18/proj/CS554_NLP_Team7/saved_models/{step}.pt")
+                                }, f"{self.save_path}/{step}.pt")
+                    
+                    if self.rank == 0:
+                        wandb.log({"epoch": epoch}, step=step, commit = False)
+                        wandb.log({"grad_norm": avg_grad_norm.item()}, step=step, commit = False)
+                        wandb.log({"lr": self.scheduler.get_last_lr()[0]}, step=step, commit = False)
+                        wandb.log({"perplexity": math.exp(avg_loss[0].item())}, step=step, commit = False)
+                        wandb.log({"loss": avg_loss[0].item()}, step=step, commit=True)
+                    avg_loss.zero_()
+                    avg_grad_norm.zero_()
 
                     if dist.is_initialized(): dist.barrier()
                 else:
@@ -101,52 +109,28 @@ class Pre_Trainer:
                         self.scaler.scale(loss).backward()
 
     @torch.no_grad
-    def sample(self, ini_input):
+    def sample(self):
         self.model.eval()
         self.model.module.clear_kv_cache()
         tokenizer = self.train_data_loader.dataset.tokenizer
-        tokens = tokenizer(ini_input, truncation=False, max_length=None)['input_ids']
-        prompt = torch.tensor(tokens).unsqueeze(0).to(self.device)
-        ans_token = []
-        next_token_logits = self.model.module(prompt)[0,-1,:]
-        k = 200 # top k sample
-        topk_logits, topk_indices = torch.topk(next_token_logits, k)
-        topk_probs = torch.softmax(topk_logits, dim=-1)
-        next_token = topk_indices[torch.multinomial(topk_probs, 1)].cpu().item()
-        ans_token.append(next_token)
-        while not (len(ans_token) >= 128 or ans_token[-1] == tokenizer.eos_token_id):
-            last_token = torch.tensor([ans_token[-1]]).unsqueeze(0).to(self.device)
-            next_token_logits = self.model.module(last_token)[0,-1,:]
+        ans_token = [tokenizer.eos_token_id]
+        while (not (len(ans_token) >= 256 or ans_token[-1] == tokenizer.eos_token_id)) or len(ans_token) == 1:
+            last_token = torch.tensor([[ans_token[-1]]]).to(self.device)
+            next_token_logits = self.model.module(last_token)[0,-1,:] # / 0.8
             k = 200 # top k sample
             topk_logits, topk_indices = torch.topk(next_token_logits, k)
             topk_probs = torch.softmax(topk_logits, dim=-1)
             next_token = topk_indices[torch.multinomial(topk_probs, 1)].cpu().item()
             ans_token.append(next_token)
-        ans_text = tokenizer.decode(tokens+ans_token, skip_special_tokens=True)
+        ans_text = tokenizer.decode(ans_token, skip_special_tokens=True)
         self.model.module.clear_kv_cache()
         return ans_text
         
     @torch.no_grad
-    def test(self):
-        # Qualitative test
-        tests = {}
-        # 1. Language Understanding
-        lan_tests = ['The dog is chasing the ', 'He go to school every day. Here is grammar error in this sentence, and the correct one is: ']
-        tests['language'] = lan_tests
-        # 2. common sense
-        cs_test = ['The capital city of the United States is ', 'World War II ends in ', 'After putting ice cube into hot water, the hot water will ']
-        tests['common sense'] = cs_test
-        # 3. reasoning
-        re_test = ['17 * 24 = ', 'Tom is taller than Jerry. Jerry is taller than Bob. Thus the tallest one is ', 'Bird is to fly as fish is to ']
-        tests['reasoning'] = re_test
-        # 4. Writing
-        wr_test = ['My name is Vivek, I am a student in AI major, this is my introduction: ', 'Here is a joke: ']
-        tests['writing'] = wr_test
-
-        ans = {}
-        for key, prompts in tests.items():
-            # ans[key] = []
-            for prompt in prompts:
-                model_ans = self.sample(prompt)
-                # ans[key].append(model_ans)
-                wandb.log({f"{key}: ": wandb.Html(model_ans)})
+    def test(self, step):
+        table = wandb.Table(columns=["text"])
+        for i in range(8):
+            sample = self.sample()
+            table.add_data(sample)
+        wandb.log({f"text_samples_{step}": table}, step=step, commit = False)
+        # print(sample_text)

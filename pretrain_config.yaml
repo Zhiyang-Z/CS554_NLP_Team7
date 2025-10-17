@@ -1,5 +1,5 @@
 dataset:
-  name: "HuggingFaceFW/fineweb"
+  name: "HuggingFaceFW/fineweb-edu"
   subname: "sample-10BT"
 
 model:
@@ -17,7 +17,7 @@ model:
   # n_head: 16
   # dim_head: 96
   # ff_ratio: 4.0
-  # ff_dropout: 0.1
+  # ff_dropout: 0.0 # 0.0 for pretraining
   # ex_ratio: 1.2
   # 2.7B
   # n_dim: 2560
@@ -25,7 +25,7 @@ model:
   # n_head: 32
   # dim_head: 80
   # ff_ratio: 4.0
-  # ff_dropout: 0.1
+  # ff_dropout: 0.0 # 0.0 for pretraining
   # ex_ratio: 1.2
   # 1.3B
   # n_dim: 2048
@@ -33,7 +33,7 @@ model:
   # n_head: 24
   # dim_head: 128
   # ff_ratio: 4.0
-  # ff_dropout: 0.1
+  # ff_dropout: 0.0 # 0.0 for pretraining
   # ex_ratio: 1.2
 
 pretraining:
@@ -41,24 +41,32 @@ pretraining:
   pretrain_length: 1024
   batch_size_per_gpu: 32
   batch_size: 500000
-  learning_rate: 6.0e-4
+  learning_rate: 2.0e-3
   weight_decay: 0.1
   # 0.7B
   # pretrain_length: 1024
   # batch_size_per_gpu: 24
   # batch_size: 500000
   # learning_rate: 2.5e-4
+  # weight_decay: 0.1
   # 2.7B
   # pretrain_length: 1024
   # batch_size_per_gpu: 6
   # batch_size: 1000000
   # learning_rate: 1.6e-4
+  # weight_decay: 0.1
   # 1.3B
-  # pretrain_length: 1024
+  # pretrain_length: 2048
   # batch_size_per_gpu: 4 # 14 for A100, 4 for L40S
   # batch_size: 1000000
   # learning_rate: 2.0e-4
+  # weight_decay: 0.1
+
+  # lr_scheduler
+  warmup_iters: 700
+  lr_decay_iters: 7000
+  min_learning_rate: 2.0e-4
 
 path:
-  save: gpt-training
-  load: /home/zzhang18/proj/CS554_NLP_Team7/saved_models/
+  save: /home/zzhang18/proj/CS554_NLP_Team7/saved_models/
+  load: /home/zzhang18/proj/CS554_NLP_Team7/saved_models/small_final.pt

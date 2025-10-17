@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from dataloaders.fineweb import PretrainDataset
 from model.gpt import GPT
+from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR
 from torch.distributed.optim import ZeroRedundancyOptimizer
 import yaml
 import math
@@ -21,12 +22,12 @@ def ddp_main(rank: int, world_size: int):
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     print(f"The vocabulary size is {tokenizer.vocab_size}, special tokens: {tokenizer.all_special_tokens}")
     dataset = PretrainDataset(dataset_name=config['dataset']['name'], subname=config['dataset']['subname'],
-                              tokenizer=tokenizer, pretrain_len=config['pretraining']['pretrain_length']+1)
+                              tokenizer=tokenizer, pretrain_len=config['pretraining']['pretrain_length']+1) # +1 for target shift
     dataloader = DataLoader(dataset,
                             batch_size=config['pretraining']['batch_size_per_gpu'],
                             pin_memory=True,
                             shuffle=False, # must be False when use DDP
-                            num_workers=4,
+                            num_workers=1, # For IterableDataset, it's useless to launch multiple workers???
                             drop_last=True,
                             prefetch_factor=2)
     # # test dataloader speed
@@ -44,6 +45,7 @@ def ddp_main(rank: int, world_size: int):
                 device = f'cuda:{rank}',
                 ex_ratio = config['model']['ex_ratio'])
 
+    model = model.to(f'cuda:{rank}')
     model.train()
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Number of parameters: {total_params}")
@@ -53,14 +55,29 @@ def ddp_main(rank: int, world_size: int):
                                         lr=config['pretraining']['learning_rate'],
                                         betas=(0.9, 0.95),
                                         weight_decay=config['pretraining']['weight_decay'])
+    # lr scheduler
+    # Warmup (LR: 0 → base LR)
+    scheduler_warmup = LinearLR(optimizer, start_factor=1.0e-6, end_factor=1, total_iters=config['pretraining']['warmup_iters'])
+    # Cosine decay after warmup
+    scheduler_decay = CosineAnnealingLR(optimizer, T_max=config['pretraining']['lr_decay_iters'], eta_min=config['pretraining']['min_learning_rate'])
+    # Constant LR after decay
+    scheduler_constant = ConstantLR(optimizer, factor=config['pretraining']['min_learning_rate'] / config['pretraining']['learning_rate'])
+    # Combine them sequentially
+    scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_decay, scheduler_constant],
+                             milestones=[config['pretraining']['warmup_iters'], config['pretraining']['warmup_iters'] + config['pretraining']['lr_decay_iters']])
+    
     # load state for continue training
     # if config['path']['load'] is not None:
-    #     model.load_state_dict(config['path']['load'])
+    #     state_dict = torch.load(config['path']['load'], "cpu")
+    #     model.load_state_dict(state_dict)
+    #     print(f"model loaded from {config['path']['load']}")
     # train
     grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length']))
     print(f'grad accum steps: {grad_accum_steps}')
-    pre_trainer = Pre_Trainer(dataloader, model, optimizer, grad_accum_steps)
+    pre_trainer = Pre_Trainer(dataloader, model, optimizer, scheduler, grad_accum_steps, config['path']['save'])
     print('training start...')
     pre_trainer.train()
+    # print('test start...')
+    # pre_trainer.test()
 
     ddp_cleanup()

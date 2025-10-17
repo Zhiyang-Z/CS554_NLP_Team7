@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 import torch.distributed as dist
-from datetime import timedelta
+import random
 
 def ddp_setup(rank, world_size):
     """
@@ -20,6 +20,11 @@ def ddp_setup(rank, world_size):
     dist.init_process_group(backend="nccl",
                             rank=rank,
                             world_size=world_size,)
+    # Set random seed
+    random.seed(rank)
+    np.random.seed(rank)
+    torch.manual_seed(rank)
+    torch.cuda.manual_seed(rank)
     # enable fp32
     torch.set_float32_matmul_precision("high")
     
