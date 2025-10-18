@@ -10,7 +10,7 @@ from torch.distributed.optim import ZeroRedundancyOptimizer
 import yaml
 import math
 
-def ddp_main(rank: int, world_size: int):
+def ddp_main(rank: int, world_size: int, resume: bool):
     print("ddp setup...")
     ddp_setup(rank, world_size)
     print("ddp setup done.")
@@ -67,14 +67,16 @@ def ddp_main(rank: int, world_size: int):
                              milestones=[config['pretraining']['warmup_iters'], config['pretraining']['warmup_iters'] + config['pretraining']['lr_decay_iters']])
     
     # load state for continue training
-    # if config['path']['load'] is not None:
-    #     state_dict = torch.load(config['path']['load'], "cpu")['model_state_dict']
-    #     model.load_state_dict(state_dict)
-    #     print(f"model loaded from {config['path']['load']}")
+    if resume:
+        checkpoint = torch.load(config['path']['load'], "cpu")
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        print(f"checkpoint loaded from {config['path']['load']}")
     # train
     grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length']))
     print(f'grad accum steps: {grad_accum_steps}')
-    pre_trainer = Pre_Trainer(dataloader, model, optimizer, scheduler, grad_accum_steps, config['path']['save'])
+    pre_trainer = Pre_Trainer(dataloader, model, optimizer, scheduler, grad_accum_steps, config, resume)
     print('training start...')
     pre_trainer.train()
     # print('test start...')

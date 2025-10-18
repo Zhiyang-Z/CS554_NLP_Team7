@@ -13,6 +13,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Pretrain LLM Parameters")
 
     parser.add_argument("--pretrain", dest="pretrain", action="store_true", help="Do pretrain.")
+    parser.add_argument("--resume", dest="resume", action="store_true", help="Continue pretrain.")
     parser.add_argument("--sft", dest="sft", action="store_true", help="Do supervised finetuning.")
 
     args = parser.parse_args()
@@ -30,4 +31,4 @@ if __name__ == "__main__":
     print(f"detected {world_size} GPUs.")
     print("spawn processes...")
 
-    mp.spawn(ddp_main, args=(world_size,), nprocs=world_size)
+    mp.spawn(ddp_main, args=(world_size, args.resume), nprocs=world_size)

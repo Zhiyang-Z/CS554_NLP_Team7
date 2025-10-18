@@ -17,11 +17,15 @@ class Pre_Trainer:
         optimizer: torch.optim.Optimizer,
         scheduler,
         grad_accum_steps: int,
-        save_path: str
+        config: dict,
+        resume: bool
     ) -> None:
         self.world_size = int(os.environ['WORLD_SIZE'])
         self.rank = int(os.environ['RANK'])
         self.device = f'cuda:{self.rank}'
+        self.config = config
+        self.save_path = self.config['path']['save']
+        self.resume = resume
 
         self.model = model
         self.model = self.model.to(self.device)
@@ -37,24 +41,28 @@ class Pre_Trainer:
 
         # Creates a GradScaler for mixed precision training.
         self.scaler = torch.GradScaler()
+        if self.resume:
+            self.scaler.load_state_dict(torch.load(self.config['path']['load'], "cpu")['scaler_state_dict'])
 
         self.grad_accum_steps = grad_accum_steps
-
-        self.save_path = save_path
 
         if self.rank == 0:
             wandb.init(project="Final", entity="CS554_NLP")
 
     def train(self):
-        step = 0
+        checkpoint = torch.load(self.config['path']['load'], "cpu")
+        step = checkpoint['global_step'] if self.resume else 0
         avg_loss = torch.zeros((1,), device=self.device)
         avg_grad_norm = torch.zeros((1,), device=self.device)
-        for epoch in range(2000000000): # termination is decide by human.
-            # Here, we shuffle dataset for each iteration
+        for epoch in range(checkpoint['epoch'] if self.resume else 0, 2000000000): # termination is decide by human.
+            # Here, we shuffle dataset for each epoch
             self.train_data_loader.dataset.set_and_shuffle_dataset(46+epoch)
+            if self.resume:
+                self.train_data_loader.dataset.dataset.load_state_dict(checkpoint['dataset_state'])
             self.optimizer.zero_grad(set_to_none = True) # clear remainder when iterating dataset.
             avg_loss.zero_()
             avg_grad_norm.zero_()
+            self.resume = False # only use resume for first epoch
             for i, data in tqdm(enumerate(self.train_data_loader)):
                 self.model.train()
                 data = data.to(self.device)
@@ -84,16 +92,20 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    if step % 80 == 1 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
-                        self.test(step)
-                        torch.save({# dataset state
-                                    'model_state_dict': self.model.module.state_dict(),
-                                    # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(), # Anything wrong? very slow to sychronize between GPUs
-                                    # scalar
-                                    'scheduler_state_dict': self.scheduler.state_dict(),
-                                    'epoch': epoch,
-                                    'global_step': step
-                                }, f"{self.save_path}/latest.pt")
+                    save_freq = 80 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    if step % save_freq == 1: # collect complete optimizer state before saving
+                        optim_to_save = self.optimizer.consolidate_state_dict(to=0)
+                        if self.rank == 0:
+                            self.test(step)
+                            torch.save({
+                                        'dataset_state': self.train_data_loader.dataset.dataset.state_dict(),
+                                        'model_state_dict': self.model.module.state_dict(),
+                                        'optimizer_state_dict': optim_to_save.state_dict(),
+                                        'scaler_state_dict': self.scaler.state_dict(),
+                                        'scheduler_state_dict': self.scheduler.state_dict(),
+                                        'epoch': epoch,
+                                        'global_step': step
+                                    }, f"{self.save_path}/latest.pt")
                     
                     if self.rank == 0:
                         wandb.log({"epoch": epoch}, step=step, commit = False)
