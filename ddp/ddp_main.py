@@ -61,14 +61,14 @@ def ddp_main(rank: int, world_size: int):
     # Cosine decay after warmup
     scheduler_decay = CosineAnnealingLR(optimizer, T_max=config['pretraining']['lr_decay_iters'], eta_min=config['pretraining']['min_learning_rate'])
     # Constant LR after decay
-    scheduler_constant = ConstantLR(optimizer, factor=config['pretraining']['min_learning_rate'] / config['pretraining']['learning_rate'])
+    scheduler_constant = ConstantLR(optimizer, factor=config['pretraining']['min_learning_rate'] / config['pretraining']['learning_rate'], total_iters=1e9) # keep constant forever
     # Combine them sequentially
     scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_decay, scheduler_constant],
                              milestones=[config['pretraining']['warmup_iters'], config['pretraining']['warmup_iters'] + config['pretraining']['lr_decay_iters']])
     
     # load state for continue training
     # if config['path']['load'] is not None:
-    #     state_dict = torch.load(config['path']['load'], "cpu")
+    #     state_dict = torch.load(config['path']['load'], "cpu")['model_state_dict']
     #     model.load_state_dict(state_dict)
     #     print(f"model loaded from {config['path']['load']}")
     # train

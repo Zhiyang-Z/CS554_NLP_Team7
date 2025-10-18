@@ -84,15 +84,16 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    if step % 3600 == 1 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    if step % 80 == 1 and self.rank == 0: # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                         self.test(step)
-                        torch.save({
+                        torch.save({# dataset state
                                     'model_state_dict': self.model.module.state_dict(),
                                     # 'optimizer_state_dict': self.optimizer.consolidate_state_dict(to=0).state_dict(), # Anything wrong? very slow to sychronize between GPUs
+                                    # scalar
                                     'scheduler_state_dict': self.scheduler.state_dict(),
                                     'epoch': epoch,
                                     'global_step': step
-                                }, f"{self.save_path}/{step}.pt")
+                                }, f"{self.save_path}/latest.pt")
                     
                     if self.rank == 0:
                         wandb.log({"epoch": epoch}, step=step, commit = False)

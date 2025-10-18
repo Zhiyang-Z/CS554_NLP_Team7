@@ -7,7 +7,7 @@ import numpy as np
 import argparse
 
 # os.environ["WANDB_MODE"] = "disabled"
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,2"
 
 def get_args():
     parser = argparse.ArgumentParser(description="Pretrain LLM Parameters")
