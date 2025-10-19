@@ -50,7 +50,7 @@ class Pre_Trainer:
             wandb.init(project="Final", entity="CS554_NLP")
 
     def train(self):
-        checkpoint = torch.load(self.config['path']['load'], "cpu")
+        if self.resume: checkpoint = torch.load(self.config['path']['load'], "cpu")
         step = checkpoint['global_step'] if self.resume else 0
         avg_loss = torch.zeros((1,), device=self.device)
         avg_grad_norm = torch.zeros((1,), device=self.device)
@@ -92,15 +92,15 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    save_freq = 80 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    save_freq = 375 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                     if step % save_freq == 1: # collect complete optimizer state before saving
-                        optim_to_save = self.optimizer.consolidate_state_dict(to=0)
+                        # self.optimizer.consolidate_state_dict(to=0)
                         if self.rank == 0:
                             self.test(step)
                             torch.save({
-                                        'dataset_state': self.train_data_loader.dataset.dataset.state_dict(),
+                                        # 'dataset_state': self.train_data_loader.dataset.dataset.state_dict(),
                                         'model_state_dict': self.model.module.state_dict(),
-                                        'optimizer_state_dict': optim_to_save.state_dict(),
+                                        # 'optimizer_state_dict': optim_to_save.state_dict(),
                                         'scaler_state_dict': self.scaler.state_dict(),
                                         'scheduler_state_dict': self.scheduler.state_dict(),
                                         'epoch': epoch,

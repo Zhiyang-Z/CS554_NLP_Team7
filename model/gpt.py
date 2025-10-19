@@ -148,25 +148,24 @@ class GPT(nn.Module):
         # pos_embed = get_1d_sincos_pos_embed(self.n_dim, np.arange(self.train_length, dtype=np.float32))
         # self.register_buffer('pos_embed', torch.from_numpy(pos_embed).float().unsqueeze(0))
         # initialize parameters
-        self._ini_para()
+        print('transformer initializing...')
+        self.apply(self._ini_para)
         # apply special scaled init to the residual projections, per GPT-2 paper
         for pn, p in self.named_parameters():
             if pn.endswith('to_out.weight') or pn.endswith('ff2.weight'):
                 torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * self.n_layer))
 
-    def _ini_para(self):
-        print('transformer initializing...')
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.02)
-                if m.bias is not None: nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Embedding):
-                nn.init.normal_(m.weight, mean=0, std=0.02)
-            elif isinstance(m, torch.nn.LayerNorm):
-                torch.nn.init.ones_(m.weight)
-                torch.nn.init.zeros_(m.bias)
-            else:
-                pass
+    def _ini_para(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, mean=0, std=0.02)
+            if m.bias is not None: nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean=0, std=0.02)
+        elif isinstance(m, torch.nn.LayerNorm):
+            torch.nn.init.ones_(m.weight)
+            torch.nn.init.zeros_(m.bias)
+        else:
+            pass
 
     def forward(self, x):
         # x shape: [Batch, Length]

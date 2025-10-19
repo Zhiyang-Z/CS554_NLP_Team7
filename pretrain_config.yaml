@@ -68,5 +68,5 @@ pretraining:
   min_learning_rate: 2.0e-5
 
 path:
-  save: /home/zhiyang/projects/CS554_NLP_Team7/saved_models/
-  load: /home/zhiyang/projects/CS554_NLP_Team7/saved_models/latest.pt
+  save: /home/zzhang18/proj/CS554_NLP_Team7/saved_models/
+  load: /home/zzhang18/proj/CS554_NLP_Team7/saved_models/latest.pt
