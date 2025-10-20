@@ -146,5 +146,5 @@ class Pre_Trainer:
         for i in range(8):
             sample = self.sample()
             sample_text += f"=== Sample {i+1} ===<br>{sample}<br><br>"
-        wandb.log({f"sample_text": wandb.Html(sample_text)}, step=step, commit = False)
-        # print(sample_text)
+        # wandb.log({f"sample_text": wandb.Html(sample_text)}, step=step, commit = False)
+        print(sample_text)

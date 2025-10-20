@@ -6,7 +6,7 @@ import random
 import numpy as np
 import argparse
 
-# os.environ["WANDB_MODE"] = "disabled"
+os.environ["WANDB_MODE"] = "disabled"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "0,2"
 
 def get_args():
