@@ -56,13 +56,14 @@ class Pre_Trainer:
         avg_grad_norm = torch.zeros((1,), device=self.device)
         for epoch in range(checkpoint['epoch'] if self.resume else 0, 2000000000): # termination is decide by human.
             # Here, we shuffle dataset for each epoch
-            self.train_data_loader.dataset.set_and_shuffle_dataset(46+epoch)
+            self.train_data_loader.dataset.set_and_shuffle_dataset(777+epoch)
             if self.resume:
-                self.train_data_loader.dataset.dataset.load_state_dict(checkpoint['dataset_state'])
+                dataset_state = torch.load(f"{self.save_path}/dataset_{self.rank}.pt", "cpu")
+                self.train_data_loader.dataset.dataset.load_state_dict(dataset_state['dataset_state'])
             self.optimizer.zero_grad(set_to_none = True) # clear remainder when iterating dataset.
             avg_loss.zero_()
             avg_grad_norm.zero_()
-            self.resume = False # only use resume for first epoch
+            self.resume = False # only use resume for first time jump into training loop.
             for i, data in tqdm(enumerate(self.train_data_loader)):
                 self.model.train()
                 data = data.to(self.device)
@@ -95,14 +96,14 @@ class Pre_Trainer:
                     save_freq = 375 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                     if step % save_freq == 1: # collect complete optimizer state before saving
                         # self.optimizer.consolidate_state_dict(to=0)
+                        torch.save({'dataset_state': self.train_data_loader.dataset.dataset.state_dict()},
+                                   f"{self.save_path}/dataset_{self.rank}.pt")
                         if self.rank == 0:
                             self.test(step)
                             torch.save({
-                                        # 'dataset_state': self.train_data_loader.dataset.dataset.state_dict(),
                                         'model_state_dict': self.model.module.state_dict(),
                                         # 'optimizer_state_dict': optim_to_save.state_dict(),
                                         'scaler_state_dict': self.scaler.state_dict(),
-                                        'scheduler_state_dict': self.scheduler.state_dict(),
                                         'epoch': epoch,
                                         'global_step': step
                                     }, f"{self.save_path}/latest.pt")
