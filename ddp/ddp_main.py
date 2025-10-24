@@ -71,7 +71,7 @@ def ddp_main(rank: int, world_size: int, resume: bool):
         checkpoint = torch.load(config['path']['load'], "cpu")
         model.load_state_dict(checkpoint['model_state_dict'])
         # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        # scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         print(f"checkpoint loaded from {config['path']['load']}")
     # train
     grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']*config['pretraining']['pretrain_length']))
