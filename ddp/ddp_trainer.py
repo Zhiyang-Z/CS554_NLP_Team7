@@ -127,6 +127,11 @@ class Pre_Trainer:
         self.model.module.clear_kv_cache()
         tokenizer = self.train_data_loader.dataset.tokenizer
         ans_token = [tokenizer.eos_token_id]
+        q = "This is some choices for game GPU: "
+        ans_token += tokenizer(q, truncation=False, max_length=None)['input_ids']
+        for t in ans_token:
+            t_tensor = torch.tensor([[t]]).to(self.device)
+            _ = self.model.module(t_tensor)
         while (not (len(ans_token) >= 256 or ans_token[-1] == tokenizer.eos_token_id)) or len(ans_token) == 1:
             last_token = torch.tensor([[ans_token[-1]]]).to(self.device)
             next_token_logits = self.model.module(last_token)[0,-1,:] # / 0.8
@@ -143,7 +148,7 @@ class Pre_Trainer:
     def test(self, step):
         # wandb 0.19.10 works fine.
         sample_text = ""
-        for i in range(8):
+        for i in range(1):
             sample = self.sample()
             sample_text += f"=== Sample {i+1} ===<br>{sample}<br><br>"
         # wandb.log({f"sample_text": wandb.Html(sample_text)}, step=step, commit = False)
