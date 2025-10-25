@@ -25,14 +25,26 @@ class SFTDataset(Dataset):
         roles, cur_role = ['user', 'assistant'], 0
         role_start_toks, role_end_toks = [self.user_start_id, self.assistant_start_id], [self.user_end_id, self.assistant_end_id]
         # take turns to speak
+        meet_system = False
         for turn in item_text:
-            assert turn['role'] == roles[cur_role]
+            if turn['role'] == 'system':
+                assert len(item_tok) == 1, f"{self.dataset[idx]}"
+                assert cur_role == 0
+                meet_system = True
+                item_tok.append(role_start_toks[cur_role])
+                item_tok += (self.tokenizer(turn['content'] + " ", truncation=False, max_length=None)['input_ids'])
+                continue
+            assert turn['role'] == roles[cur_role], f"{self.dataset[idx]}"
             # add current role tokens
-            item_tok.append(role_start_toks[cur_role])
-            item_tok.extend(self.tokenizer(turn['content'], truncation=False, max_length=None)['input_ids'])
+            if not meet_system: item_tok.append(role_start_toks[cur_role])
+            else: meet_system = False
+            item_tok += (self.tokenizer(turn['content'], truncation=False, max_length=None)['input_ids'])
             item_tok.append(role_end_toks[cur_role])
             cur_role = 1 - cur_role # switch role
         # there do exits some samples that end with user, we drop them.
         # assert cur_role == 0 # should end with assistant, wait for user.
+        # pad the seq to fixed-length
+        assert self.pad_length > len(item_tok), f"{self.pad_length} not great than {len(item_tok)}, case: {self.dataset[idx]}"
+        item_tok += ([self.pad_id] * (self.pad_length - len(item_tok)))
 
-        return np.array(item_tok, dtype=np.int32)
+        return np.array(item_tok)

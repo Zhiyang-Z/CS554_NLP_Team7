@@ -181,6 +181,25 @@ class GPT(nn.Module):
         for layer in self.decoder_layers:
             layer.clear_kv_cache()
 
+    def enlarge_voc(self, increse_num, pad_tok_id):
+        # This is for adding instruction tokens in SFT stage.
+        # make sure to use this func after parameters loaded.
+        old_emb, old_out = self.embedding, self.out
+        # make out the new embedding and out project.
+        new_voc_size = self.v_size + increse_num
+        new_voc = nn.Embedding(new_voc_size, self.n_dim, device=self.device)
+        new_out = nn.Linear(self.n_dim, new_voc_size, device=self.device)
+        # Initialize new token embeddings
+        nn.init.normal_(new_voc.weight, mean=0.0, std=0.02)
+        nn.init.normal_(new_out.weight, mean=0.0, std=0.02)
+        # copy the old parameters
+        new_voc.weight.data[0:self.v_size] = old_emb.weight.data
+        new_out.weight.data[0:self.v_size] = old_out.weight.data
+        # replace the original one
+        self.embedding, self.out = new_voc, new_out
+        del old_emb, old_out
+        # BTW, save the pad_tok_id the position doesn't need gradient.
+        self.pad_tok_id = pad_tok_id
             
 if __name__ == "__main__":
     print(torch.backends.cuda.flash_sdp_enabled())      # FlashAttention available?
