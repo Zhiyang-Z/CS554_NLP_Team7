@@ -65,8 +65,8 @@ class Pre_Trainer:
             self.resume = False # only use resume for first time jump into training loop.
             for i, data in tqdm(enumerate(self.train_data_loader)):
                 self.model.train()
-                data = data.to(self.device)
-                x, y = data[:,:-1].contiguous(), data[:,1:].contiguous() # input and label
+                x, y = data # input and label, already shifted in dataloader
+                x, y = x.to(self.device), y.to(self.device)
                 with torch.autocast(device_type='cuda', dtype=torch.float16):
                     logits = self.model(x)
                     voc_size = logits.shape[-1]
@@ -92,7 +92,7 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    save_freq = 16 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    save_freq = 150 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                     if step % save_freq == 1: # collect complete optimizer state before saving
                         # self.optimizer.consolidate_state_dict(to=0)
                         # torch.save({'dataset_state': self.train_data_loader.dataset.dataset.state_dict()},
@@ -105,7 +105,7 @@ class Pre_Trainer:
                                         'scaler_state_dict': self.scaler.state_dict(),
                                         'epoch': epoch,
                                         'global_step': step
-                                    }, f"{self.save_path}/latest_sft0.pt")
+                                    }, f"{self.save_path}/latest_sft.pt")
                     
                     if self.rank == 0:
                         wandb.log({"epoch": epoch}, step=step, commit = False)

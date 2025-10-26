@@ -1,5 +1,5 @@
 dataset:
-  name: "HuggingFaceTB/smoltalk"
+  name: "stingning/ultrachat"
   subname: "all"
 
 model:
@@ -57,7 +57,7 @@ pretraining:
   # weight_decay: 0.1
   # 1.3B
   pretrain_length: 2048
-  batch_size_per_gpu: 8
+  batch_size_per_gpu: 4
   batch_size: 256 # not represent token in SFT
   learning_rate: 5.0e-5
   weight_decay: 0.1

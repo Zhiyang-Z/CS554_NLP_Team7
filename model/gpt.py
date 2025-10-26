@@ -181,7 +181,7 @@ class GPT(nn.Module):
         for layer in self.decoder_layers:
             layer.clear_kv_cache()
 
-    def enlarge_voc(self, increse_num, pad_tok_id):
+    def enlarge_voc(self, increse_num, pad_tok_id=-100):
         # This is for adding instruction tokens in SFT stage.
         # make sure to use this func after parameters loaded.
         old_emb, old_out = self.embedding, self.out
@@ -198,6 +198,8 @@ class GPT(nn.Module):
         # replace the original one
         self.embedding, self.out = new_voc, new_out
         del old_emb, old_out
+        # weight tying again
+        self.embedding.weight = self.out.weight
         # BTW, save the pad_tok_id the position doesn't need gradient.
         self.pad_tok_id = pad_tok_id
             

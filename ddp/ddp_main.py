@@ -2,8 +2,9 @@ import torch
 from ddp.ddp_utils import ddp_setup, ddp_cleanup
 from ddp.ddp_trainer import Pre_Trainer
 from torch.utils.data import DataLoader
+from torch.utils.data._utils.collate import default_collate
 from transformers import AutoTokenizer
-from dataloaders.smoltalk import SFTDataset
+from dataloaders.ultrachat import SFTDataset
 from model.gpt import GPT
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR
 from torch.distributed.optim import ZeroRedundancyOptimizer
@@ -11,6 +12,31 @@ from torch.utils.data.distributed import DistributedSampler
 import yaml
 import math
 from tqdm import tqdm
+import numpy as np
+
+def drop_long(batch):
+    batch_max_len = -1
+    idx, long_idx = -1, []
+    for item in batch:
+        assert item[0].shape == item[1].shape
+        idx += 1
+        if item[0].shape[0] > 2048:
+            long_idx.append(idx)
+            continue
+        if item[0].shape[0] > batch_max_len: batch_max_len = item[0].shape[0]
+    batch_align_len = 2048 + 1
+    batch_extend = []
+    idx = -1
+    for item in batch:
+        idx += 1
+        if idx in long_idx:
+            input_padding, label_padding = np.array([0] * batch_align_len), np.array([-100] * batch_align_len)
+            batch_extend.append((input_padding[:-1], label_padding[1:])) # shifted in dataloader
+            continue
+        assert batch_align_len > item[0].shape[0] and item[0].shape == item[1].shape
+        input_padding, label_padding = np.array([0] * (batch_align_len - item[0].shape[0])), np.array([-100] * (batch_align_len - item[0].shape[0]))
+        batch_extend.append((np.append(item[0], input_padding)[:-1], np.append(item[1], label_padding)[1:])) # shifted in dataloader
+    return default_collate(batch_extend)
 
 def ddp_main(rank: int, world_size: int, resume: bool):
     print("ddp setup...")
@@ -25,31 +51,30 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     print(f"The original vocabulary size is {len(tokenizer)}, special tokens/id: {tokenizer.all_special_tokens}/{tokenizer.eos_token_id}")
     # enlarge tokens for instruction finetuning
     new_special_tokens = ["<|user_start|>", "<|user_end|>", "<|assistant_start|>", "<|assistant_end|>"]
-    tokenizer.add_special_tokens({"pad_token": "<|pad|>",
-                                  "additional_special_tokens": new_special_tokens})
-    tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids("<|pad|>")
+    tokenizer.add_special_tokens({"additional_special_tokens": new_special_tokens})
     tokenizer.user_start_token_id = tokenizer.convert_tokens_to_ids("<|user_start|>")
     tokenizer.user_end_token_id = tokenizer.convert_tokens_to_ids("<|user_end|>")
     tokenizer.assistant_start_token_id = tokenizer.convert_tokens_to_ids("<|assistant_start|>")
     tokenizer.assistant_end_token_id = tokenizer.convert_tokens_to_ids("<|assistant_end|>")
     print(f"The enlarged vocabulary size is {len(tokenizer)}, special token_id: \
-          [{tokenizer.eos_token_id}, {tokenizer.pad_token_id}, {tokenizer.user_start_token_id}, {tokenizer.user_end_token_id}, {tokenizer.assistant_start_token_id}, {tokenizer.assistant_end_token_id}]")
+          [{tokenizer.eos_token_id}, {tokenizer.user_start_token_id}, {tokenizer.user_end_token_id}, {tokenizer.assistant_start_token_id}, {tokenizer.assistant_end_token_id}]")
     # dataloader
     dataset = SFTDataset(dataset_name=config['dataset']['name'], subname=config['dataset']['subname'],
-                              tokenizer=tokenizer, pad_length=2048)
+                              tokenizer=tokenizer)
     dataloader = DataLoader(dataset,
                             batch_size=config['pretraining']['batch_size_per_gpu'],
                             pin_memory=True,
                             shuffle=False, # must be False when use DDP
-                            num_workers=4, # For IterableDataset, it's useless to launch multiple workers???
+                            num_workers=4,
                             drop_last=True,
                             prefetch_factor=2,
-                            sampler=DistributedSampler(dataset, shuffle=True, seed=0))
-    # test dataloader speed
+                            sampler=DistributedSampler(dataset, shuffle=True, seed=0),
+                            collate_fn=drop_long)
+    # # test dataloader speed
     # lens = []
     # for i, data in tqdm(enumerate(dataloader)):
-    #     pass
-    # print(max(lens))
+    #     print(data)
+    # exit()
     # model defination
     model = GPT(v_size = tokenizer.vocab_size,
                 train_length = config['pretraining']['pretrain_length'],
@@ -88,7 +113,7 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     model.load_state_dict(checkpoint['model_state_dict'])
     print(f"checkpoint loaded from {config['path']['load']}")
     # after loading parameters, we can enlarge vocabulary now.
-    model.enlarge_voc(len(new_special_tokens)+1, tokenizer.pad_token_id) # +1 for pad token
+    model.enlarge_voc(len(new_special_tokens), -100)
     print(f"vocabulary enlarged.")
     # train
     grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']))
