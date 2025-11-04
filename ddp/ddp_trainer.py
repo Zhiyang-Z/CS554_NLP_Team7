@@ -48,15 +48,16 @@ class Pre_Trainer:
 
         if self.rank == 0:
             wandb.init(project="Final", entity="CS554_NLP")
+            wandb.watch(self.model, log='all', log_freq=40*grad_accum_steps)
 
     def train(self):
         if self.resume: checkpoint = torch.load(self.config['path']['load'], "cpu")
         step = checkpoint['global_step'] if self.resume else 0
         avg_loss = torch.zeros((1,), device=self.device)
         avg_grad_norm = torch.zeros((1,), device=self.device)
-        for epoch in range(checkpoint['epoch'] if self.resume else 0, 2000000000): # termination is decide by human.
+        for epoch in range(checkpoint['epoch'] if self.resume else 0, 2000000000): # human decide terminate
             # Here, we shuffle dataset for each epoch
-            self.train_data_loader.dataset.set_and_shuffle_dataset(777+epoch)
+            self.train_data_loader.dataset.set_and_shuffle_dataset(7+epoch)
             if self.resume:
                 dataset_state = torch.load(f"{self.save_path}/dataset_{self.rank}.pt", "cpu")
                 self.train_data_loader.dataset.dataset.load_state_dict(dataset_state['dataset_state'])
@@ -93,16 +94,16 @@ class Pre_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    save_freq = 375 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    save_freq = 80 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                     if step % save_freq == 1: # collect complete optimizer state before saving
-                        # self.optimizer.consolidate_state_dict(to=0)
+                        # self.optimizer.consolidate_state_dict(to=0) # too slow to collect from GPUs.
                         torch.save({'dataset_state': self.train_data_loader.dataset.dataset.state_dict()},
                                    f"{self.save_path}/dataset_{self.rank}.pt")
                         if self.rank == 0:
                             self.test(step)
                             torch.save({
                                         'model_state_dict': self.model.module.state_dict(),
-                                        # 'optimizer_state_dict': optim_to_save.state_dict(),
+                                        # 'optimizer_state_dict': optim_to_save.state_dict(), # too slow to collect from GPUs.
                                         'scaler_state_dict': self.scaler.state_dict(),
                                         'epoch': epoch,
                                         'global_step': step

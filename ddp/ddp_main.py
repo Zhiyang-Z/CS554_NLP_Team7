@@ -41,7 +41,7 @@ def ddp_main(rank: int, world_size: int, resume: bool):
                 n_head = config['model']['n_head'],
                 dim_head = config['model']['dim_head'],
                 ff_ratio = config['model']['ff_ratio'],
-                ff_dropout = config['model']['ff_dropout'],
+                dropout_rate = config['model']['dropout_rate'],
                 device = f'cuda:{rank}',
                 ex_ratio = config['model']['ex_ratio'])
 
