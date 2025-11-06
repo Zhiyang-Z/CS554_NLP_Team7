@@ -63,7 +63,14 @@ class Attention(nn.Module):
             self.cur_cached_len += L
             # current Q, K, V
             q, k, v = q, self.cached_k[:, :, 0:self.cur_cached_len, :], self.cached_v[:, :, 0:self.cur_cached_len, :]
-            x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=False)
+            if L > 1:
+                # prefill the cache for the first time, this is for test during training.
+                if self.cur_cached_len == L:
+                    x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=True)
+                else:
+                    raise NotImplementedError("Only support single token generation after prefill.")
+            else:
+                x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=False)
 
         x = rearrange(x, "B h L d -> B L (h d)")
         x = x.to(q.dtype)

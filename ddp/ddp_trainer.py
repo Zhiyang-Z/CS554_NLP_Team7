@@ -1,5 +1,9 @@
 import torch
 from torch.utils.data import DataLoader
+from datasets import load_dataset
+from eval.eval_choice import Eval_Choice
+from dataloaders.eval_data import EvalDataset
+from eval.eval_choice import make_dataloader4eval_choice
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -137,12 +141,18 @@ class Pre_Trainer:
             topk_probs = torch.softmax(topk_logits, dim=-1)
             next_token = topk_indices[torch.multinomial(topk_probs, 1)].cpu().item()
             ans_token.append(next_token)
-        ans_text = tokenizer.decode(ans_token, skip_special_tokens=True)
+        ans_text = tokenizer.decode(ans_token, skip_special_tokens=False)
         self.model.module.clear_kv_cache()
         return ans_text
         
     @torch.no_grad
     def test(self, step):
+        # Hellaswag test.
+        dataset = EvalDataset(load_dataset("hellaswag", split="validation"), self.train_data_loader.dataset.tokenizer)
+        dataloader = make_dataloader4eval_choice(dataset, 8)
+        evaluator = Eval_Choice(dataloader, self.model.module, device=self.device)
+        test_score = evaluator.eval()
+        wandb.log({f"HellaSwag Score": test_score}, step=step, commit = False)
         # wandb 0.19.10 works fine.
         sample_text = ""
         for i in range(8):
