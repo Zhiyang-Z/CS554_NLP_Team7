@@ -60,8 +60,9 @@ class MyModelForCausalLM(PreTrainedModel):
 # save files
 config = MyModelConfig()
 model = MyModelForCausalLM(config)
-state_dict = torch.load("saved_model/latest.pt", map_location="cpu")
+state_dict = torch.load("latest.pt", map_location="cpu")['model_state_dict']
+state_dict = {f"model.{k}": v for k, v in state_dict.items()} # for meet HF wrap
 model.load_state_dict(state_dict)
 
-model.save_pretrained("my_model")
-tokenizer.save_pretrained("my_model")
+model.save_pretrained("/media/zhiyang/zhiyang_HDD/hf_upload/", safe_serialization=False) # safe_serialization=False is for weight tying.
+tokenizer.save_pretrained("/media/zhiyang/zhiyang_HDD/hf_upload/")
