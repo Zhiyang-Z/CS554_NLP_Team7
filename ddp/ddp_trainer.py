@@ -152,7 +152,7 @@ class Pre_Trainer:
         dataloader = make_dataloader4eval_choice(dataset, 8)
         evaluator = Eval_Choice(dataloader, self.model.module, device=self.device)
         test_score = evaluator.eval()
-        wandb.log({f"HellaSwag Score(%)": test_score}, step=step, commit = False)
+        wandb.log({f"HellaSwag Score(0-shot, %)": test_score}, step=step, commit = False)
         # wandb 0.19.10 works fine.
         sample_text = ""
         for i in range(8):
