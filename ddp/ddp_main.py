@@ -4,6 +4,8 @@ from ddp.ddp_trainer import Pre_Trainer
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from transformers import AutoTokenizer
+from datasets import load_dataset
+from torch.utils.data import ConcatDataset
 from dataloaders.ultrachat import SFTDataset
 from model.gpt import GPT
 from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR
@@ -14,29 +16,25 @@ import math
 from tqdm import tqdm
 import numpy as np
 
-def drop_long(batch):
+def pad_and_truncate_long(batch):
+    max_len = 4096
     batch_max_len = -1
-    idx, long_idx = -1, []
+
     for item in batch:
         assert item[0].shape == item[1].shape
-        idx += 1
-        if item[0].shape[0] > 2048:
-            long_idx.append(idx)
-            continue
         if item[0].shape[0] > batch_max_len: batch_max_len = item[0].shape[0]
-    batch_align_len = 2048 + 1
-    batch_extend = []
-    idx = -1
+    batch_align_len = min(batch_max_len, max_len)
+    batch_padded = []
     for item in batch:
-        idx += 1
-        if idx in long_idx:
-            input_padding, label_padding = np.array([0] * batch_align_len), np.array([-100] * batch_align_len)
-            batch_extend.append((input_padding[:-1], label_padding[1:])) # shifted in dataloader
-            continue
-        assert batch_align_len > item[0].shape[0] and item[0].shape == item[1].shape
-        input_padding, label_padding = np.array([0] * (batch_align_len - item[0].shape[0])), np.array([-100] * (batch_align_len - item[0].shape[0]))
-        batch_extend.append((np.append(item[0], input_padding)[:-1], np.append(item[1], label_padding)[1:])) # shifted in dataloader
-    return default_collate(batch_extend)
+        assert item[0].shape == item[1].shape
+        if batch_align_len > item[0].shape[0]: # pad to fixed length.
+            padding_len = batch_align_len - item[0].shape[0]
+            input_padding, label_padding = np.array([0] * padding_len), np.array([-100] * padding_len)
+            batch_padded.append((np.append(item[0], input_padding)[:-1], np.append(item[1], label_padding)[1:])) # shifted in dataloader
+        else: # truncate
+            batch_padded.append((item[0][0:batch_align_len][:-1], item[1][0:batch_align_len][1:])) # shifted in dataloader
+
+    return default_collate(batch_padded)
 
 def ddp_main(rank: int, world_size: int, resume: bool):
     print("ddp setup...")
@@ -58,9 +56,28 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     tokenizer.assistant_end_token_id = tokenizer.convert_tokens_to_ids("<|assistant_end|>")
     print(f"The enlarged vocabulary size is {len(tokenizer)}, special token_id: \
           [{tokenizer.eos_token_id}, {tokenizer.user_start_token_id}, {tokenizer.user_end_token_id}, {tokenizer.assistant_start_token_id}, {tokenizer.assistant_end_token_id}]")
+    # dataset, combine datasets together for different abilities.
+    sft_datasets_list = []
+    # for talking ability
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/everyday-conversations-llama3.1-2k", split="train_sft"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'everyday-conversations', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-magpie-ultra', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-constraints', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-rewrite', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-summarize', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'explore-instruct-rewriting', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'openhermes-100k', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'systemchats-30k', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft"))
+    # For math ability
+    # sft_datasets_list.append(load_dataset("openai/gsm8k", "main", split="train"))
+    # sft_datasets_list.append(load_dataset("qintongli/GSM-Plus-v0", "default", split="test"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'metamathqa-50k', split="train"))
+    # sft_datasets_list.append(load_dataset("tiedong/goat", split="train"))
+
+    sft_dataset = ConcatDataset(sft_datasets_list)
+    dataset = SFTDataset(sft_dataset, tokenizer=tokenizer)
     # dataloader
-    dataset = SFTDataset(dataset_name=config['dataset']['name'], subname=config['dataset']['subname'],
-                              tokenizer=tokenizer)
     dataloader = DataLoader(dataset,
                             batch_size=config['pretraining']['batch_size_per_gpu'],
                             pin_memory=True,
@@ -69,21 +86,25 @@ def ddp_main(rank: int, world_size: int, resume: bool):
                             drop_last=True,
                             prefetch_factor=2,
                             sampler=DistributedSampler(dataset, shuffle=True, seed=0),
-                            collate_fn=drop_long)
-    # # test dataloader speed
+                            collate_fn=pad_and_truncate_long)
+    # test dataloader speed
     # lens = []
-    # for i, data in tqdm(enumerate(dataloader)):
-    #     print(data)
-    # exit()
+    total_tok, trained_tok = 0, 0
+    for x, y in tqdm(dataloader):
+        total_tok += y.shape[0] * y.shape[1]
+        trained_tok += (y != -100).sum()
+    # print(f"max len is: {np.sort(np.array(dataset.max_len))[-5000:-1]}")
+    print(f"total tokens: {total_tok}, trained tokens: {trained_tok}")
+    exit()
     # model defination
-    model = GPT(v_size = tokenizer.vocab_size,
+    model = GPT(v_size = len(tokenizer),
                 train_length = config['pretraining']['pretrain_length'],
                 n_dim = config['model']['n_dim'],
                 n_layer = config['model']['n_layer'],
                 n_head = config['model']['n_head'],
                 dim_head = config['model']['dim_head'],
                 ff_ratio = config['model']['ff_ratio'],
-                ff_dropout = config['model']['ff_dropout'],
+                dropout_rate = config['model']['dropout_rate'],
                 device = f'cuda:{rank}',
                 ex_ratio = config['model']['ex_ratio'])
 
@@ -110,11 +131,17 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     
     # load state for continue SFT
     checkpoint = torch.load(config['path']['load'], "cpu")
-    model.load_state_dict(checkpoint['model_state_dict'])
-    print(f"checkpoint loaded from {config['path']['load']}")
+    model.load_state_dict({k: v for k, v in checkpoint['model_state_dict'].items() if not (k.startswith("rope_") or k == "embedding.weight" or k == 'out.weight' or k == 'out.bias')}, strict=False) # strict=False to ignore the rope param.
+    model.embedding.weight.data[0:tokenizer.vocab_size] = checkpoint['model_state_dict']["embedding.weight"]
+    model.out.weight.data[0:tokenizer.vocab_size] = checkpoint['model_state_dict']["out.weight"]
+    model.out.bias.data[0:tokenizer.vocab_size] = checkpoint['model_state_dict']["out.bias"]
+    if not torch.equal(model.embedding.weight.data, model.out.weight.data):
+        print("weight tying failed.")
+    # print(f"checkpoint loaded from {config['path']['load']}")
     # after loading parameters, we can enlarge vocabulary now.
-    model.enlarge_voc(len(new_special_tokens), -100)
-    print(f"vocabulary enlarged.")
+    # model.enlarge_voc(len(new_special_tokens), -100)
+    # print(f"vocabulary enlarged.")
+    # model.apply(model._ini_para)
     # train
     grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']))
     print(f'grad accum steps: {grad_accum_steps}')

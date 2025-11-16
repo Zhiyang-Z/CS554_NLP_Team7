@@ -12,9 +12,7 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser(description="Pretrain LLM Parameters")
 
-    parser.add_argument("--pretrain", dest="pretrain", action="store_true", help="Do pretrain.")
     parser.add_argument("--resume", dest="resume", action="store_true", help="Continue pretrain.")
-    parser.add_argument("--sft", dest="sft", action="store_true", help="Do supervised finetuning.")
 
     args = parser.parse_args()
     return args

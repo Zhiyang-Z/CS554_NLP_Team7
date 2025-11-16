@@ -8,11 +8,11 @@ from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, 
 from torch.distributed.optim import ZeroRedundancyOptimizer
 import yaml
 import math
-from eval.eval import Pretrain_Eval
+# rom eval.eval import Pretrain_Eval
 
 rank = 0
 # configure
-with open("pretrain_config.yaml", "r") as f:
+with open("sft_config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
 # tokenizer
@@ -54,6 +54,9 @@ _ = model(torch.tensor([[tokenizer.eos_token_id]]).to(f'cuda:{rank}'))
 while True:
     print("human: ")
     user_input = input()
+    if user_input.startswith('new topic'):
+        _ = model(torch.tensor([[tokenizer.eos_token_id]]).to(f'cuda:{rank}'))
+        continue
     tokens = []
     tokens.append(role_start_toks[cur_role])
     tokens += (tokenizer(user_input, truncation=False, max_length=None)['input_ids'])

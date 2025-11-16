@@ -31,13 +31,13 @@ class Pre_Trainer:
         self.model = self.model.to(self.device)
         self.model = DDP(self.model)
         # compile should be after DDP, refer to https://pytorch.org/docs/main/notes/ddp.html
-        self.model = torch.compile(self.model)
+        # self.model = torch.compile(self.model)
         
         self.model.train()
 
         self.train_data_loader = train_data_loader
         self.optimizer, self.scheduler = optimizer, scheduler
-        self.loss_fn = torch.nn.CrossEntropyLoss(weight=None, reduction='mean', ignore_index=self.model.module.pad_tok_id)
+        self.loss_fn = torch.nn.CrossEntropyLoss(weight=None, reduction='mean', ignore_index=-100)
 
         # Creates a GradScaler for mixed precision training.
         self.scaler = torch.GradScaler()
@@ -66,6 +66,11 @@ class Pre_Trainer:
             for i, data in tqdm(enumerate(self.train_data_loader)):
                 self.model.train()
                 x, y = data # input and label, already shifted in dataloader
+                # print(x.shape, y.shape)
+                # y[0][y[0] == -100] = 0
+                # print(self.train_data_loader.dataset.tokenizer.decode(x[0], skip_special_tokens=False))
+                # print(self.train_data_loader.dataset.tokenizer.decode(y[0], skip_special_tokens=False))
+                # exit()
                 x, y = x.to(self.device), y.to(self.device)
                 with torch.autocast(device_type='cuda', dtype=torch.float16):
                     logits = self.model(x)

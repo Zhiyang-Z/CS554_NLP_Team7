@@ -3,22 +3,24 @@ import torch.nn.functional as F
 import math
 from typing import Tuple
 
-def rotary_pos_emb_frequencies(head_dim: int, device, base: float = 10000.0) -> torch.Tensor:
+def rotary_pos_emb_frequencies(head_dim: int, device, ex_ratio=1, base: float = 10000.0) -> torch.Tensor:
     """
     Returns frequencies of shape (head_dim//2,)
     frequencies: [theta_1, theta_2, theta_3,..., theta_(d/2)]
     """
     assert head_dim % 2 == 0, "head_dim must be even for RoPE."
     half = head_dim // 2
-    inv_freq = 1.0 / (base ** (torch.arange(0, half, dtype=torch.float32) / half))
+    inv_freq = (1.0 / (base ** (torch.arange(0, half, dtype=torch.float32) / half))) * (1.0 / ex_ratio)
+    print(f"rotary embedding will be interpolated with ratio: {ex_ratio}")
     return inv_freq.to(device)  # shape (half,)
 
-def precompute_cos_sin(seq_len: int, head_dim: int, device, dtype=torch.float32, base: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
+def precompute_cos_sin(seq_len: int, head_dim: int, device, ex_ratio=1, dtype=torch.float32, base: float = 10000.0) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Precompute cos and sin for positions [0..seq_len-1].
     Returns cos, sin each of shape (seq_len, 1, head_dim) to broadcast over (B, H, L, D).
     """
-    inv_freq = rotary_pos_emb_frequencies(head_dim, device, base=base)  # (half,), frequencies: [theta_1, theta_2, theta_3,..., theta_(d/2)]
+    print(f'max length: {seq_len}')
+    inv_freq = rotary_pos_emb_frequencies(head_dim, device, ex_ratio, base=base)  # (half,), frequencies: [theta_1, theta_2, theta_3,..., theta_(d/2)]
     positions = torch.arange(seq_len, device=device, dtype=dtype)  # (seq_len,)
     # outer -> (seq_len, half)
     angle = torch.einsum("p,d->pd", positions, inv_freq)  # (seq_len, half)
