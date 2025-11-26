@@ -48,7 +48,8 @@ _ = model(torch.tensor([[tokenizer.eos_token_id]]).to(f'cuda:{rank}'))
 while True:
     print("human: ")
     user_input = input()
-    if user_input.startswith('new topic'):
+    if user_input.startswith(':new topic'):
+        model.clear_kv_cache()
         _ = model(torch.tensor([[tokenizer.eos_token_id]]).to(f'cuda:{rank}'))
         continue
     tokens = []
