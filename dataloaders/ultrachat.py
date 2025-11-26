@@ -25,6 +25,7 @@ class SFTDataset(Dataset):
         meet_system, system_add_start = False, False
         for turn in item_text:
             if turn['role'] == 'system':
+                assert False, f"Temporarily disable training on <SYSTEM>, exception: {self.dataset[idx]}"
                 assert meet_system == False
                 assert 'user' == roles[cur_role], f"{self.dataset[idx]}" # system must be at begining.
                 meet_system = True

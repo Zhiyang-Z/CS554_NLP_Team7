@@ -17,7 +17,7 @@ from tqdm import tqdm
 import numpy as np
 
 def pad_and_truncate(batch):
-    max_len = 4096
+    max_len = 2048 #4096
     batch_max_len = -1
 
     for item in batch:
@@ -59,17 +59,19 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     # dataset, combine datasets together for different abilities.
     sft_datasets_list = []
     # for talking ability
+    # only <user> and <assistant>, no <system> role
     sft_datasets_list.append(load_dataset("HuggingFaceTB/everyday-conversations-llama3.1-2k", split="train_sft"))
+    sft_datasets_list.append(load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'everyday-conversations', split="train"))
     sft_datasets_list.append(load_dataset("lmsys/lmsys-chat-1m", split="train").filter(lambda x: x["language"] == "English"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-magpie-ultra', split="train"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-constraints', split="train"))
-    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-rewrite', split="train"))
-    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-summarize', split="train"))
-    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'explore-instruct-rewriting', split="train"))
-    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'openhermes-100k', split="train"))
-    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'systemchats-30k', split="train"))
-    sft_datasets_list.append(load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft"))
+    # have <system> role
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-rewrite', split="train"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-summarize', split="train"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'explore-instruct-rewriting', split="train"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'openhermes-100k', split="train"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'systemchats-30k', split="train"))
     # For math ability
     # sft_datasets_list.append(load_dataset("openai/gsm8k", "main", split="train"))
     # sft_datasets_list.append(load_dataset("qintongli/GSM-Plus-v0", "default", split="test"))

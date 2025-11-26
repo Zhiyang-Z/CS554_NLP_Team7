@@ -50,6 +50,7 @@ while True:
     user_input = input()
     if user_input.startswith(':new topic'):
         model.clear_kv_cache()
+        assert cur_role == 0
         _ = model(torch.tensor([[tokenizer.eos_token_id]]).to(f'cuda:{rank}'))
         continue
     tokens = []
@@ -63,11 +64,12 @@ while True:
     # machine start to speak
     cur_role = 1 - cur_role # switch role
     print("machine: ")
+    assert cur_role == 1
     tokens = [role_start_toks[cur_role]]
     while tokens[-1] != role_end_toks[cur_role]:
         token_gpu = torch.tensor([[tokens[-1]]]).to(f'cuda:{rank}')
         next_token_logits = model(token_gpu)[0,-1,:] # / 0.8
-        k = 200 # top k sample
+        k = 256 # top k sample
         topk_logits, topk_indices = torch.topk(next_token_logits, k)
         topk_probs = torch.softmax(topk_logits, dim=-1)
         next_token = topk_indices[torch.multinomial(topk_probs, 1)].cpu().item()

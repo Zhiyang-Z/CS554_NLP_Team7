@@ -48,7 +48,7 @@ class SFT_Trainer:
 
         if self.rank == 0:
             wandb.init(project="Final", entity="CS554_NLP")
-            wandb.watch(self.model, log='all', log_freq=15*grad_accum_steps)
+            wandb.watch(self.model, log='all', log_freq=20*grad_accum_steps)
 
     def train(self):
         if self.resume: checkpoint = torch.load(self.config['path']['load'], "cpu")
@@ -93,7 +93,7 @@ class SFT_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    save_freq = 30 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
+                    save_freq = 45 # 144 for 1.3B_2A100_1.35it/s, 3600 for 0.125B_4L40S_3it/s
                     if step % save_freq == 1: # collect complete optimizer state before saving
                         # self.optimizer.consolidate_state_dict(to=0)
                         # torch.save({'dataset_state': self.train_data_loader.dataset.dataset.state_dict()},
