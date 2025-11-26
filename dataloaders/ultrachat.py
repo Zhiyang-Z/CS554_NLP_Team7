@@ -17,7 +17,7 @@ class SFTDataset(Dataset):
         return len(self.dataset)
     
     def _get_conversation(self, idx):
-        item_text = self.dataset[idx]['messages']
+        item_text = self.dataset[idx]['messages'] if 'messages' in self.dataset[idx] else self.dataset[idx]['conversation']
         item_tok = [self.eot_id]
         roles, cur_role = ['user', 'assistant'], 0
         role_start_toks, role_end_toks = [self.user_start_id, self.assistant_start_id], [self.user_end_id, self.assistant_end_id]
@@ -89,7 +89,7 @@ class SFTDataset(Dataset):
         return item_tok, label_tok
     
     def __getitem__(self, idx):
-        if 'messages' in self.dataset[idx]:
+        if 'messages' in self.dataset[idx] or 'conversation' in self.dataset[idx]:
             return self._get_conversation(idx)
         elif 'question' in self.dataset[idx] or 'input' in self.dataset[idx]:
             return self._get_math_question(idx)

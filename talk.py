@@ -1,13 +1,7 @@
 import torch
-from ddp.ddp_utils import ddp_setup, ddp_cleanup
-from ddp.ddp_trainer import Pre_Trainer
-from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 from model.gpt import GPT
-from torch.optim.lr_scheduler import SequentialLR, LinearLR, CosineAnnealingLR, ConstantLR
-from torch.distributed.optim import ZeroRedundancyOptimizer
 import yaml
-import math
 # rom eval.eval import Pretrain_Eval
 
 rank = 0
@@ -30,13 +24,13 @@ print(f"The enlarged vocabulary size is {len(tokenizer)}, special token_id: \
 
 # model defination
 model = GPT(v_size = tokenizer.vocab_size + 4,
-            train_length = config['pretraining']['pretrain_length'],
+            train_length = config['sft']['pretrain_length'],
             n_dim = config['model']['n_dim'],
             n_layer = config['model']['n_layer'],
             n_head = config['model']['n_head'],
             dim_head = config['model']['dim_head'],
             ff_ratio = config['model']['ff_ratio'],
-            ff_dropout = config['model']['ff_dropout'],
+            dropout_rate = config['model']['dropout_rate'],
             device = f'cuda:{rank}',
             ex_ratio = config['model']['ex_ratio'])
 

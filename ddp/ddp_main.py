@@ -1,6 +1,6 @@
 import torch
 from ddp.ddp_utils import ddp_setup, ddp_cleanup
-from ddp.ddp_trainer import Pre_Trainer
+from ddp.ddp_trainer import SFT_Trainer
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from transformers import AutoTokenizer
@@ -16,7 +16,7 @@ import math
 from tqdm import tqdm
 import numpy as np
 
-def pad_and_truncate_long(batch):
+def pad_and_truncate(batch):
     max_len = 4096
     batch_max_len = -1
 
@@ -61,6 +61,7 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     # for talking ability
     sft_datasets_list.append(load_dataset("HuggingFaceTB/everyday-conversations-llama3.1-2k", split="train_sft"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'everyday-conversations', split="train"))
+    sft_datasets_list.append(load_dataset("lmsys/lmsys-chat-1m", split="train").filter(lambda x: x["language"] == "English"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-magpie-ultra', split="train"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-constraints', split="train"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-rewrite', split="train"))
@@ -79,26 +80,26 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     dataset = SFTDataset(sft_dataset, tokenizer=tokenizer)
     # dataloader
     dataloader = DataLoader(dataset,
-                            batch_size=config['pretraining']['batch_size_per_gpu'],
+                            batch_size=config['sft']['batch_size_per_gpu'],
                             pin_memory=True,
                             shuffle=False, # must be False when use DDP
                             num_workers=4,
                             drop_last=True,
                             prefetch_factor=2,
-                            sampler=DistributedSampler(dataset, shuffle=True, seed=0),
-                            collate_fn=pad_and_truncate_long)
+                            sampler=DistributedSampler(dataset, shuffle=True, seed=7),
+                            collate_fn=pad_and_truncate)
     # test dataloader speed
     # lens = []
-    total_tok, trained_tok = 0, 0
-    for x, y in tqdm(dataloader):
-        total_tok += y.shape[0] * y.shape[1]
-        trained_tok += (y != -100).sum()
-    # print(f"max len is: {np.sort(np.array(dataset.max_len))[-5000:-1]}")
-    print(f"total tokens: {total_tok}, trained tokens: {trained_tok}")
-    exit()
+    # total_tok, trained_tok = 0, 0
+    # for x, y in tqdm(dataloader):
+    #     total_tok += y.shape[0] * y.shape[1]
+    #     trained_tok += (y != -100).sum()
+    # # print(f"max len is: {np.sort(np.array(dataset.max_len))[-5000:-1]}")
+    # print(f"total tokens: {total_tok}, trained tokens: {trained_tok}")
+    # exit()
     # model defination
     model = GPT(v_size = len(tokenizer),
-                train_length = config['pretraining']['pretrain_length'],
+                train_length = config['sft']['pretrain_length'],
                 n_dim = config['model']['n_dim'],
                 n_layer = config['model']['n_layer'],
                 n_head = config['model']['n_head'],
@@ -115,37 +116,32 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     # optimizer
     optimizer = ZeroRedundancyOptimizer(model.parameters(),
                                         optimizer_class=torch.optim.AdamW,
-                                        lr=config['pretraining']['learning_rate'],
+                                        lr=config['sft']['learning_rate'],
                                         betas=(0.9, 0.95),
-                                        weight_decay=config['pretraining']['weight_decay'])
-    # # lr scheduler
-    # # Warmup (LR: 0 → base LR)
-    # scheduler_warmup = LinearLR(optimizer, start_factor=1.0e-6, end_factor=1, total_iters=config['pretraining']['warmup_iters'])
+                                        weight_decay=config['sft']['weight_decay'])
+    # lr scheduler
+    # Warmup (LR: 0 → base LR)
+    # scheduler_warmup = LinearLR(optimizer, start_factor=1.0e-6, end_factor=1, total_iters=config['sft']['warmup_iters'])
     # # Cosine decay after warmup
-    # scheduler_decay = CosineAnnealingLR(optimizer, T_max=config['pretraining']['lr_decay_iters'], eta_min=config['pretraining']['min_learning_rate'])
+    # scheduler_decay = CosineAnnealingLR(optimizer, T_max=config['sft']['lr_decay_iters'], eta_min=config['sft']['min_learning_rate'])
     # # Constant LR after decay
-    # scheduler_constant = ConstantLR(optimizer, factor=config['pretraining']['min_learning_rate'] / config['pretraining']['learning_rate'], total_iters=1e9) # keep constant forever
+    # scheduler_constant = ConstantLR(optimizer, factor=config['sft']['min_learning_rate'] / config['sft']['learning_rate'], total_iters=1e9) # keep constant forever
     # # Combine them sequentially
     # scheduler = SequentialLR(optimizer, schedulers=[scheduler_warmup, scheduler_decay, scheduler_constant],
-    #                          milestones=[config['pretraining']['warmup_iters'], config['pretraining']['warmup_iters'] + config['pretraining']['lr_decay_iters']])
+    #                          milestones=[config['sft']['warmup_iters'], config['sft']['warmup_iters'] + config['sft']['lr_decay_iters']])
     
     # load state for continue SFT
     checkpoint = torch.load(config['path']['load'], "cpu")
-    model.load_state_dict({k: v for k, v in checkpoint['model_state_dict'].items() if not (k.startswith("rope_") or k == "embedding.weight" or k == 'out.weight' or k == 'out.bias')}, strict=False) # strict=False to ignore the rope param.
+    model.load_state_dict({k: v for k, v in checkpoint['model_state_dict'].items() if not (k.startswith("rope_") or k == "embedding.weight" or k == 'out.weight')}, strict=False) # strict=False to ignore the rope param.
     model.embedding.weight.data[0:tokenizer.vocab_size] = checkpoint['model_state_dict']["embedding.weight"]
     model.out.weight.data[0:tokenizer.vocab_size] = checkpoint['model_state_dict']["out.weight"]
-    model.out.bias.data[0:tokenizer.vocab_size] = checkpoint['model_state_dict']["out.bias"]
     if not torch.equal(model.embedding.weight.data, model.out.weight.data):
         print("weight tying failed.")
-    # print(f"checkpoint loaded from {config['path']['load']}")
-    # after loading parameters, we can enlarge vocabulary now.
-    # model.enlarge_voc(len(new_special_tokens), -100)
-    # print(f"vocabulary enlarged.")
-    # model.apply(model._ini_para)
+    print(f"checkpoint loaded from {config['path']['load']}")
     # train
-    grad_accum_steps = math.ceil(config['pretraining']['batch_size'] / (world_size*config['pretraining']['batch_size_per_gpu']))
+    grad_accum_steps = math.ceil(config['sft']['batch_size'] / (world_size*config['sft']['batch_size_per_gpu']))
     print(f'grad accum steps: {grad_accum_steps}')
-    pre_trainer = Pre_Trainer(dataloader, model, optimizer, None, grad_accum_steps, config, False)
+    pre_trainer = SFT_Trainer(dataloader, model, optimizer, None, grad_accum_steps, config, False)
     print('training start...')
     pre_trainer.train()
     # print('test start...')
