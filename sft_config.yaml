@@ -30,7 +30,7 @@ model:
   dim_head: 128
   ff_ratio: 4.0
   dropout_rate: 0.1 # 0.1 for SFT
-  ex_ratio: 1.0
+  ex_ratio: 8.0
 
 sft:
   # 0.125B
@@ -53,7 +53,7 @@ sft:
   # weight_decay: 0.1
   # 1.3B
   pretrain_length: 2048
-  batch_size_per_gpu: 2
+  batch_size_per_gpu: 1
   batch_size: 512 # not represent token in SFT
   learning_rate: 1.0e-5
   weight_decay: 0.1
