@@ -37,7 +37,7 @@ model = GPT(v_size = tokenizer.vocab_size + 4,
 model = model.to(f'cuda:{rank}')
 
 # load state for continue training
-checkpoint = torch.load(f"{config['path']['save']}/latest_sft.pt", "cpu")
+checkpoint = torch.load(f"{config['path']['save']}/latest_sft_epoch3_bdata.pt", "cpu")
 model.load_state_dict(checkpoint['model_state_dict'])
 print(f"checkpoint loaded from {config['path']['load']}")
 
@@ -46,7 +46,7 @@ roles, cur_role = ['user', 'assistant'], 0
 role_start_toks, role_end_toks = [tokenizer.user_start_token_id, tokenizer.assistant_start_token_id], [tokenizer.user_end_token_id, tokenizer.assistant_end_token_id]
 _ = model(torch.tensor([[tokenizer.eos_token_id]]).to(f'cuda:{rank}'))
 while True:
-    print("human: ")
+    print("[human]: ")
     user_input = input()
     if user_input.startswith(':new topic'):
         model.clear_kv_cache()
@@ -63,13 +63,13 @@ while True:
         _ = model(token_gpu)
     # machine start to speak
     cur_role = 1 - cur_role # switch role
-    print("machine: ")
+    print("[machine]: ")
     assert cur_role == 1
     tokens = [role_start_toks[cur_role]]
     while tokens[-1] != role_end_toks[cur_role]:
         token_gpu = torch.tensor([[tokens[-1]]]).to(f'cuda:{rank}')
-        next_token_logits = model(token_gpu)[0,-1,:] # / 0.8
-        k = 256 # top k sample
+        next_token_logits = model(token_gpu)[0,-1,:] / 0.8
+        k = 50 # top k sample
         topk_logits, topk_indices = torch.topk(next_token_logits, k)
         topk_probs = torch.softmax(topk_logits, dim=-1)
         next_token = topk_indices[torch.multinomial(topk_probs, 1)].cpu().item()

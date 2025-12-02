@@ -17,13 +17,13 @@ from tqdm import tqdm
 import numpy as np
 
 def pad_and_truncate(batch):
-    max_len = 16384 # 2048*8
+    max_len = 2048 #16384 # 2048*8
     batch_max_len = -1
 
     for item in batch:
         assert item[0].shape == item[1].shape
         if item[0].shape[0] > batch_max_len: batch_max_len = item[0].shape[0]
-    # if batch_max_len > max_len: print(f"truncate! from {batch_max_len} to {max_len}, data:{batch[0]}")
+    # if batch_max_len > max_len: print(f"truncate! from {batch_max_len} to {max_len}") #, data:{batch[0]}")
     batch_align_len = min(batch_max_len, max_len)
     batch_padded = []
     for item in batch:
@@ -62,10 +62,12 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     # for talking ability
     # only <user> and <assistant>, no <system> role
     sft_datasets_list.append(load_dataset("HuggingFaceTB/everyday-conversations-llama3.1-2k", split="train_sft"))
-    sft_datasets_list.append(load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'everyday-conversations', split="train"))
     # sft_datasets_list.append(load_dataset("lmsys/lmsys-chat-1m", split="train").filter(lambda x: x["language"] == "English"))
-    sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-magpie-ultra', split="train"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-magpie-ultra', split="train"))
+    sft_datasets_list.append(load_dataset("HuggingFaceTB/smol-smoltalk", split="train").filter(lambda x: x["source"] == "smol-magpie-ultra-short"))
+    # sft_datasets_list.append(load_dataset("HuggingFaceTB/MagPie-Pro-300k-MT", split="train_sft"))
     sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-constraints', split="train"))
     # have <system> role
     # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'smol-rewrite', split="train"))
@@ -77,7 +79,6 @@ def ddp_main(rank: int, world_size: int, resume: bool):
     # sft_datasets_list.append(load_dataset("openai/gsm8k", "main", split="train"))
     # sft_datasets_list.append(load_dataset("qintongli/GSM-Plus-v0", "default", split="test"))
     # sft_datasets_list.append(load_dataset("HuggingFaceTB/smoltalk", 'metamathqa-50k', split="train"))
-    # sft_datasets_list.append(load_dataset("tiedong/goat", split="train"))
 
     sft_dataset = ConcatDataset(sft_datasets_list)
     dataset = SFTDataset(sft_dataset, tokenizer=tokenizer)

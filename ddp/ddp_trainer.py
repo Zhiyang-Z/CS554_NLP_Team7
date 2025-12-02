@@ -48,7 +48,7 @@ class SFT_Trainer:
 
         if self.rank == 0:
             wandb.init(project="Final", entity="CS554_NLP")
-            wandb.watch(self.model, log='all', log_freq=32*grad_accum_steps)
+            wandb.watch(self.model, log='all', log_freq=45*grad_accum_steps)
 
     def train(self):
         if self.resume: checkpoint = torch.load(self.config['path']['load'], "cpu")
@@ -56,6 +56,15 @@ class SFT_Trainer:
         avg_loss = torch.zeros((1,), device=self.device)
         avg_grad_norm = torch.zeros((1,), device=self.device)
         for epoch in range(checkpoint['epoch'] if self.resume else 0, 2000000000): # termination is decide by human.
+            if self.rank == 0 and epoch > 0: # don't save for epoch0.
+                # self.test(step)
+                torch.save({
+                            'model_state_dict': self.model.module.state_dict(),
+                            # 'optimizer_state_dict': optim_to_save.state_dict(),
+                            'scaler_state_dict': self.scaler.state_dict(),
+                            'epoch': epoch,
+                            'global_step': step
+                        }, f"{self.save_path}/latest_sft_epoch{epoch}_bdata.pt")
             self.train_data_loader.sampler.set_epoch(46+epoch)
             if self.resume:
                 dataset_state = torch.load(f"{self.save_path}/dataset_{self.rank}.pt", "cpu")
@@ -93,7 +102,7 @@ class SFT_Trainer:
                         print(f"rank {self.rank} all_reduce failed at step {step}: {e}")
                         raise
 
-                    save_freq = 64 # 64 for 2 A100, 45 for 2 L40S
+                    save_freq = 90 # 64 for 2 A100, 45 for 2 L40S
                     if step % save_freq == 1: # collect complete optimizer state before saving
                         # self.optimizer.consolidate_state_dict(to=0)
                         # torch.save({'dataset_state': self.train_data_loader.dataset.dataset.state_dict()},

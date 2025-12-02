@@ -55,6 +55,7 @@ class SFTDataset(Dataset):
         # also mask <assistant_start>, <eos>
         label_tok[label_tok == self.assistant_start_id] = self.pad_id
         label_tok[label_tok == self.eot_id] = self.pad_id
+        # if item_tok.shape[0] > 2048: print(self.tokenizer.decode(item_tok, skip_special_tokens=False)); exit() # debug
 
         return item_tok, label_tok
     
