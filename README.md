@@ -3,4 +3,5 @@
 ### Please leave a ⭐star⭐ if you think helpful, thanks.
 ### We wrote two blogs to record this project(pretrain and SFT separately):
 ### 1. [Pretrain](https://zhiyang-zhang.notion.site/From-Zero-to-GPT-From-GPT-to-ChatGPT-Stage-1-2b6f783f4ce980489944d757897c3ff5?source=copy_link)
-### 2. [Supervised Finetuning] Coming soon...
+### 2. [Supervised Finetune](https://zhiyang-zhang.notion.site/From-Zero-to-GPT-From-GPT-to-ChatGPT-Stage-2-2b8f783f4ce9805e8f62c826f105a77a?source=copy_link)
+### Parameters:
